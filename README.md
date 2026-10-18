@@ -2,6 +2,11 @@
 
 Product-neutral Node.js service for authoritative verification and signed credential issuance.
 
+Its core trust invariant is that evidence never substitutes authority. An
+employer, university, licensing body, verifier, and subject may support related
+facts, but each retains a separate issuer identity, jurisdiction, signature,
+and status.
+
 ## Status
 
 Public implementation foundation. No service image has been built or deployed and no production readiness is claimed yet.
@@ -26,7 +31,17 @@ OpenID for Verifiable Presentations and the High Assurance Interoperability Prof
 
 Credential issuance is a separate endpoint and state machine. It may expose OpenID for Verifiable Credential Issuance or another documented protocol. Presentation, readback, decision, issuance, status, and revocation remain distinct audit events.
 
-## Planned service modules
+## Implemented neutral core
+
+- authoritative issuance orchestration with injected authorization, verification, readback, policy, signer and audit ports;
+- deterministic canonical JSON serialization;
+- SHA3-256 and SHA3-384 multihash and raw-content CID helpers;
+- OpenID Identity Assurance evidence validation;
+- Schema.org credential-subject validation;
+- explicit `test`, `local-network`, `test-network` and `network` context handling;
+- production startup rejection for demo security mode.
+
+## Remaining service modules
 
 - trusted-verifier integration;
 - authoritative-index provider adapters;
@@ -39,11 +54,39 @@ Credential issuance is a separate endpoint and state machine. It may expose Open
 
 A ledger may record issuer authority, credential status, licence status, or a non-personal integrity commitment. Raw identity evidence, disclosed personal claims, credentials, and signing keys must not be written to a ledger.
 
+## Workforce authorization at the provider
+
+Before accepting evidence or issuing a credential on behalf of an
+organization, the service must verify the employee's active assignment, active
+membership in the exact group, and the controller-managed authorization for
+that same group and requested capability. The employee does not have a
+separate Consent merely because they are a member.
+
+If the operation also requires permission from the subject or lawful
+representative, that authorization is an additional and independent gate. A
+group authorization never substitutes for it. Assignment notifications sent
+as Communication records are auditable notices, not proof of authority.
+
+Provider readback, schema validation, policy evaluation, signing, and
+non-personal audit remain mandatory after these authorization gates.
+
+For an employee qualification, the provider resolves an awarding organization
+by legal identifier and jurisdiction. An employer may issue its own signed
+attestation when it has reviewed evidence, but may not impersonate the
+university or licensing body. If a source-issued credential later exists, its
+proof is retained alongside the employer proof with each issuer clearly
+identified.
+
+In health use cases, qualification proof remains separate from current licence
+status, active employment, group authorization, and any required subject
+authorization. The provider evaluates all required gates and fails closed; it
+does not manufacture professional authority from an employer attestation.
+
 ## Public repository boundary
 
 This repository contains neutral source, tests, examples, and deployment templates without live values. Secrets, private trust material, personal data, tenant manifests, live endpoints, and operational evidence remain outside Git.
 
-The existing private legacy gateway repository is not the source of truth for this service and will not be made public or copied wholesale. Any reused behavior requires a file-by-file contract and security audit.
+The existing private ICA repository is not published and is not copied wholesale. Neutral behavior is migrated file by file with a public contract, provenance record and security review. Sector directories, jurisdiction-specific admission rules, tenant configurations, live endpoints, certificates and deployment evidence remain outside this repository.
 
 ## Dependency direction
 
@@ -66,4 +109,3 @@ The first implementation increment must prove, with executable tests, that issua
 ## License
 
 Apache-2.0.
-

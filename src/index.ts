@@ -1,2 +1,7 @@
 export * from './authoritative-issuance-manager.js'
-
+export * from './portable/canonical-json.js'
+export * from './portable/multihash.js'
+export * from './portable/network-kind.js'
+export * from './portable/oidc4ida-evidence-validation.js'
+export * from './portable/schemaorg-credential-validation.js'
+export * from './portable/security-mode.js'
