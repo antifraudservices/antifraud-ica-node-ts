@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Pin `antifraud-data-utils-ts@0.1.4` and the test-only
+  `antifraud-sdk-node-ts@0.2.3` chain, including SDK Core `0.1.3`, and verify
+  that the canonical confidential-document and DIDComm attachment exports are
+  available without introducing an ICA-local copy.
+
 - Port audited product-neutral canonical JSON, SHA3 multihash/CID, network-kind, security-mode, OpenID Identity Assurance and Schema.org validation primitives from the existing private ICA.
 - Add an executable public-source boundary that rejects the excluded veterinary and regional-health profiles.
 - Document source provenance and the remaining adapter migration boundary.
