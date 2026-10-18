@@ -18,6 +18,8 @@
     "type": "git",
     "url": "git+https://github.com/antifraudservices/antifraud-ica-node-ts.git"
   },
-  "devDependencies": {"typescript": "^5.9.3"}
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "typescript": "^5.9.3"
+  }
 }
-

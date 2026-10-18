@@ -31,7 +31,17 @@ OpenID for Verifiable Presentations and the High Assurance Interoperability Prof
 
 Credential issuance is a separate endpoint and state machine. It may expose OpenID for Verifiable Credential Issuance or another documented protocol. Presentation, readback, decision, issuance, status, and revocation remain distinct audit events.
 
-## Planned service modules
+## Implemented neutral core
+
+- authoritative issuance orchestration with injected authorization, verification, readback, policy, signer and audit ports;
+- deterministic canonical JSON serialization;
+- SHA3-256 and SHA3-384 multihash and raw-content CID helpers;
+- OpenID Identity Assurance evidence validation;
+- Schema.org credential-subject validation;
+- explicit `test`, `local-network`, `test-network` and `network` context handling;
+- production startup rejection for demo security mode.
+
+## Remaining service modules
 
 - trusted-verifier integration;
 - authoritative-index provider adapters;
@@ -76,7 +86,7 @@ does not manufacture professional authority from an employer attestation.
 
 This repository contains neutral source, tests, examples, and deployment templates without live values. Secrets, private trust material, personal data, tenant manifests, live endpoints, and operational evidence remain outside Git.
 
-The existing private legacy gateway repository is not the source of truth for this service and will not be made public or copied wholesale. Any reused behavior requires a file-by-file contract and security audit.
+The existing private ICA repository is not published and is not copied wholesale. Neutral behavior is migrated file by file with a public contract, provenance record and security review. Sector directories, jurisdiction-specific admission rules, tenant configurations, live endpoints, certificates and deployment evidence remain outside this repository.
 
 ## Dependency direction
 
