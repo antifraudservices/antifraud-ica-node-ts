@@ -22,10 +22,10 @@
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
-    "antifraud-sdk-node-ts": "0.2.1",
+    "antifraud-sdk-node-ts": "0.2.3",
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "antifraud-data-utils-ts": "0.1.1"
+    "antifraud-data-utils-ts": "0.1.4"
   }
 }
