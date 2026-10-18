@@ -12,7 +12,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prepublishOnly": "node -e \"throw new Error('This deployable service must not be published to npm')\""
   },
-  "engines": {"node": ">=24.0.0"},
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -20,6 +22,10 @@
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
+    "antifraud-sdk-node-ts": "0.2.1",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "antifraud-data-utils-ts": "0.1.1"
   }
 }

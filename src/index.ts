@@ -1,4 +1,5 @@
 export * from './authoritative-issuance-manager.js'
+export * from './credential-issuance-http.js'
 export * from './portable/canonical-json.js'
 export * from './portable/multihash.js'
 export * from './portable/network-kind.js'
