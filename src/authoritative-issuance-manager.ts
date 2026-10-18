@@ -1,8 +1,10 @@
-export interface IssuanceCommand {
+import {
+  defineCredentialIssuanceRequest,
+  type CredentialIssuanceRequest,
+} from 'antifraud-data-utils-ts'
+
+export interface IssuanceCommand extends CredentialIssuanceRequest {
   actorReference: string
-  subjectReference: string
-  capability: string
-  verificationTransactionId: string
 }
 
 export interface AuthorizationDecision {
@@ -79,6 +81,8 @@ export class AuthoritativeIssuanceManager {
       throw new Error('Caller-supplied claims are not accepted; the provider must perform authoritative readback')
     }
 
+    defineCredentialIssuanceRequest(command)
+
     const authorization = await this.ports.authorization.authorize(command)
     if (!authorization.allowed) {
       await this.deny(reasonOrFallback(authorization.reason, 'authorization-denied'))
@@ -121,4 +125,3 @@ export class AuthoritativeIssuanceManager {
     throw new Error(reason)
   }
 }
-

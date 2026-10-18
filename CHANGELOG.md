@@ -12,3 +12,8 @@
   authorization.
 - Distinguish employer-signed qualification attestations from credentials
   issued by the referenced university or licensing body.
+- Add the credential-issuance HTTP runtime, server-owned actor resolution,
+  receipt-store port, local in-memory adapter and route-complete OpenAPI
+  document.
+- Prove the local Core -> Node SDK -> HTTP service -> authoritative issuance
+  journey without accepting caller-owned claims or actor authority.

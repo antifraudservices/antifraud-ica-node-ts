@@ -40,6 +40,10 @@ Credential issuance is a separate endpoint and state machine. It may expose Open
 - Schema.org credential-subject validation;
 - explicit `test`, `local-network`, `test-network` and `network` context handling;
 - production startup rejection for demo security mode.
+- a minimal local HTTP runtime for credential issuance, receipt lookup and
+  health, with every route represented in the exported OpenAPI document;
+- server-side actor resolution, canonical request validation and durable-store
+  port separation; the included in-memory store is for local tests only.
 
 ## Remaining service modules
 
@@ -51,6 +55,8 @@ Credential issuance is a separate endpoint and state machine. It may expose Open
 - credential status and revocation;
 - audit-event emission;
 - optional distributed-ledger anchoring through an adapter.
+- production HTTP authentication, persistent receipt storage and service-image
+  deployment.
 
 A ledger may record issuer authority, credential status, licence status, or a non-personal integrity commitment. Raw identity evidence, disclosed personal claims, credentials, and signing keys must not be written to a ledger.
 
