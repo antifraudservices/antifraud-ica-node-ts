@@ -35,7 +35,7 @@ export interface ResolvedIssuanceActor {
 export interface IcaHttpServerOptions {
   manager: AuthoritativeIssuanceManager
   store: CredentialIssuanceStore
-  resolveActor(request: IncomingMessage): Promise<ResolvedIssuanceActor>
+  resolveActor(request: IncomingMessage): Promise<ResolvedIssuanceActor | undefined>
 }
 
 type JsonObject = Record<string, unknown>
@@ -120,6 +120,11 @@ async function handleRequest(
   if (request.method === 'GET') {
     const issuanceId = issuanceIdFromPath(pathname)
     if (issuanceId) {
+      const actor = await options.resolveActor(request)
+      if (!actor?.actorReference) {
+        sendJson(response, 401, {error: 'unauthorized'})
+        return
+      }
       const receipt = await options.store.get(issuanceId)
       if (!receipt) {
         sendJson(response, 404, {error: 'issuance-not-found'})

@@ -47,7 +47,9 @@ function createRuntime() {
   const server = createIcaHttpServer({
     manager,
     store,
-    resolveActor: async () => ({actorReference: 'urn:actor:server-resolved'}),
+    resolveActor: async request => request.headers.authorization === 'Bearer provider-bearer'
+      ? {actorReference: 'urn:actor:server-resolved'}
+      : undefined,
   })
   return {calls, server, store}
 }
@@ -64,8 +66,9 @@ test('published SDK completes issuance and reload through the real local HTTP bo
   const {calls, server} = createRuntime()
   t.after(() => server.close())
   const baseUrl = await listen(server)
-  const controller = createAuthoritativeCredentialIssuanceController({baseUrl})
-  const client = new AuthoritativeCredentialProviderClient({baseUrl})
+  const bearerCredential = async () => 'provider-bearer'
+  const controller = createAuthoritativeCredentialIssuanceController({baseUrl, bearerCredential})
+  const client = new AuthoritativeCredentialProviderClient({baseUrl, bearerCredential})
 
   const issued = await controller.issue({
     subjectReference: 'urn:subject:synthetic',
@@ -79,6 +82,17 @@ test('published SDK completes issuance and reload through the real local HTTP bo
   assert.deepEqual(reloaded, issued)
   assert.deepEqual(calls.slice(0, 5), ['authorize', 'verify', 'read', 'policy', 'sign'])
   assert.equal(JSON.stringify(calls.at(-1)).includes('birthDate'), false)
+})
+
+test('HTTP boundary rejects unauthenticated issuance receipt lookup', async (t) => {
+  const {server} = createRuntime()
+  t.after(() => server.close())
+  const baseUrl = await listen(server)
+
+  const response = await fetch(`${baseUrl}/credential-issuances/issuance-synthetic-001`)
+
+  assert.equal(response.status, 401)
+  assert.deepEqual(await response.json(), {error: 'unauthorized'})
 })
 
 test('HTTP boundary rejects caller claims before invoking provider ports', async (t) => {
