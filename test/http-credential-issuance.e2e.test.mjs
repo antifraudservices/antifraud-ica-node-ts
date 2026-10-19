@@ -123,12 +123,17 @@ test('HTTP boundary returns health without exposing tenant or credential state',
   const response = await fetch(`${baseUrl}/healthz`)
   assert.equal(response.status, 200)
   assert.deepEqual(await response.json(), {status: 'ok'})
+
+  const cloudRunResponse = await fetch(`${baseUrl}/health`)
+  assert.equal(cloudRunResponse.status, 200)
+  assert.deepEqual(await cloudRunResponse.json(), {status: 'ok'})
 })
 
 test('documents every public HTTP route in OpenAPI', () => {
   assert.deepEqual(Object.keys(icaOpenApiDocument.paths).sort(), [
     '/credential-issuances',
     '/credential-issuances/{issuanceId}',
+    '/health',
     '/healthz',
   ])
 })

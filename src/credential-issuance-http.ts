@@ -93,7 +93,7 @@ async function handleRequest(
   options: IcaHttpServerOptions,
 ): Promise<void> {
   const pathname = new URL(request.url ?? '/', 'http://localhost').pathname
-  if (request.method === 'GET' && pathname === '/healthz') {
+  if (request.method === 'GET' && (pathname === '/healthz' || pathname === '/health')) {
     sendJson(response, 200, {status: 'ok'})
     return
   }
@@ -152,6 +152,7 @@ export const icaOpenApiDocument = Object.freeze({
   openapi: '3.1.0',
   info: {title: 'Neutral Identity Credential Authority', version: '0.1.0'},
   paths: {
+    '/health': {get: {operationId: 'getCloudHealth'}},
     '/healthz': {get: {operationId: 'getHealth'}},
     '/credential-issuances': {post: {operationId: 'createCredentialIssuance'}},
     '/credential-issuances/{issuanceId}': {get: {operationId: 'getCredentialIssuance'}},
