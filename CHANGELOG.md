@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add the documented `/health` alias used for public Cloud Run verification
+  while retaining `/healthz` for local and container probes.
+
 - Add a fail-closed, explicitly staging-only Beta Demo runtime, service entry
   point and non-root Cloud Run image. It resolves the synthetic actor and
   authoritative claims server-side, issues an explicitly Demo credential and
