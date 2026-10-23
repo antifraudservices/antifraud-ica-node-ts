@@ -12,7 +12,8 @@
   receipt reload require the BFF-owned bearer credential.
 
 - Pin `antifraud-data-utils-ts@0.1.4` and the test-only
-  `antifraud-sdk-node-ts@0.2.3` chain, including SDK Core `0.1.3`, and verify
+  `antifraud-sdk-node-ts@0.2.6` chain, including its bearer-authenticated
+  provider client, and verify
   that the canonical confidential-document and DIDComm attachment exports are
   available without introducing an ICA-local copy.
 
