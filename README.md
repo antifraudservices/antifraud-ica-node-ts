@@ -45,6 +45,22 @@ Credential issuance is a separate endpoint and state machine. It may expose Open
 - server-side actor resolution, canonical request validation and durable-store
   port separation; the included in-memory store is for local tests only.
 
+## Local test runtime
+
+`npm test` builds the service and exercises its real HTTP boundary. An
+all-local launcher may run `npm run build` and `npm start` with
+`ANTIFRAUD_DEPLOYMENT_STAGE=test`, `ANTIFRAUD_NETWORK_KIND=test`,
+`ANTIFRAUD_ICA_DEMO_ENABLED=true`, a configured `ANTIFRAUD_ICA_ISSUER_DID`
+(`did:web:`), and disposable `ANTIFRAUD_ICA_DEMO_BEARER` (at least 16
+characters) and `ANTIFRAUD_ICA_DEMO_SIGNING_SECRET` (at least 32 characters).
+This mode binds to `127.0.0.1` and rejects `NODE_ENV=production`.
+
+It reuses the issuance manager, rejects caller-supplied claims, accepts only
+the local synthetic subject and verification prefixes, and keeps receipts in
+memory. Credentials contain `demo: true` and an explicitly local HMAC proof;
+they are not production credentials or the reviewed admission credentials
+used by a gateway. No legacy verification endpoint is added by this runtime.
+
 ## Remaining service modules
 
 - trusted-verifier integration;

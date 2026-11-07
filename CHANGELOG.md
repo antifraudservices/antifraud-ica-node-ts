@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add an explicitly enabled, loopback-only local test runtime alongside the
+  staging Demo runtime. Reuse issuance, authorization, readback and receipt
+  ports with synthetic local fixtures; reject production and mismatched
+  network configuration. No legacy verification endpoint is introduced.
+- Verify local HTTP issuance, receipt reload and fail-closed startup as part
+  of the 17-test service suite.
+
 - Add the documented `/health` alias used for public Cloud Run verification
   while retaining `/healthz` for local and container probes.
 
