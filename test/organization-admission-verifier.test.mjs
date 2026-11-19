@@ -1,8 +1,10 @@
 // Flow contract: an authorized applicant must match an active official registry record and a verified organization proof in the exact jurisdiction and sector before ICA stores evidence.
 import assert from 'node:assert/strict'
+import { once } from 'node:events'
 import test from 'node:test'
 import {
   OrganizationAdmissionVerifier,
+  createIcaHttpServer,
   normalizeSpanishOrganizationIdentifier,
   readRegistryCacheMaxAgeMs,
 } from '../dist/index.js'
@@ -147,6 +149,42 @@ test('reads a 72-hour cache allowance by default and supports explicit overrides
   assert.equal(readRegistryCacheMaxAgeMs({ ANTIFRAUD_ICA_REGISTRY_CACHE_MAX_AGE_HOURS: '24' }), 24 * 60 * 60 * 1000)
   assert.equal(readRegistryCacheMaxAgeMs({ ANTIFRAUD_ICA_REGISTRY_CACHE_MAX_AGE_HOURS: '0' }), 0)
   assert.throws(() => readRegistryCacheMaxAgeMs({ ANTIFRAUD_ICA_REGISTRY_CACHE_MAX_AGE_HOURS: '-1' }), /REGISTRY_CACHE_MAX_AGE_HOURS/)
+})
+
+test('HTTP admission verifies a server-authenticated actor and stores evidence', async t => {
+  const { verifier, evidence, calls } = setup()
+  const server = createIcaHttpServer({
+    organizationAdmissionVerifier: verifier,
+    async resolveActor(request) {
+      return request.headers.authorization === 'Bearer local-test'
+        ? { actorReference: command.actorReference }
+        : undefined
+    },
+  })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  t.after(() => server.close())
+  const url = `http://127.0.0.1:${server.address().port}/organization-verifications`
+  const { actorReference, ...body } = command
+  const post = (payload, headers = {}) => fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify(payload),
+  })
+  const token = { authorization: 'Bearer local-test' }
+  const unauthenticated = await post(body)
+  assert.equal(unauthenticated.status, 401)
+  const callerSuppliedActor = await post({ ...body, actorReference }, token)
+  assert.equal(callerSuppliedActor.status, 400)
+  assert.deepEqual(calls, [])
+  const verified = await post(body, token)
+  assert.equal(verified.status, 200)
+  assert.deepEqual(await verified.json(), evidence[0])
+  assert.deepEqual(calls, ['authorization', 'registry', 'proof'])
+  const unsupported = await post({ ...body, sector: 'animal-care' }, token)
+  assert.equal(unsupported.status, 422)
+  assert.deepEqual(await unsupported.json(), { error: 'organization_admission_scope_unsupported' })
+  assert.equal(evidence.length, 1)
 })
 
 test('logs the 72-hour cache decision without including the organization identifier or contact', async t => {

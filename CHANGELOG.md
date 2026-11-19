@@ -5,6 +5,8 @@
 - Add a scoped organization admission evidence verifier with authoritative
   registry matching, Spanish NIF/VAT correlation and bounded registry cache
   fallback. Record the observation time and emit a structured warning on outage.
+- Expose organization evidence verification over authenticated HTTP when the
+  provider configures the verifier and its adapters.
 
 - Add an explicitly enabled, loopback-only local test runtime alongside the
   staging Demo runtime. Reuse issuance, authorization, readback and receipt

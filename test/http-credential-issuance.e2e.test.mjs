@@ -135,5 +135,6 @@ test('documents every public HTTP route in OpenAPI', () => {
     '/credential-issuances/{issuanceId}',
     '/health',
     '/healthz',
+    '/organization-verifications',
   ])
 })

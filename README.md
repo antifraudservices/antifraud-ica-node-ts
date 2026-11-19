@@ -88,8 +88,13 @@ Route a log alert for this event to the designated ICA controller's email
 through the deployment's monitoring system. No alert includes legal
 identifiers, registry URLs, contact details or proof references.
 
-This verifier is a service module. The HTTP runtime still requires configured
-registry, proof, authorization and evidence-storage adapters for admission.
+The HTTP runtime accepts evidence verification at
+`POST /organization-verifications` when configured with the verifier module.
+The request supplies `network`, `jurisdiction`, `sector`, `identifier`
+with `scheme` and `value`, and a `proofReference`. The runtime resolves the
+actor from the authenticated request. Evidence verification requires the
+registry, proof, authorization and evidence-storage adapters, and precedes
+the separate decision to admit the organization.
 
 ### Provider integrations
 

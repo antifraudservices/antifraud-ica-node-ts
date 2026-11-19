@@ -65,6 +65,12 @@ export interface RegistryFallbackWarning extends OrganizationAdmissionScope {
   maxAgeMs: number
 }
 
+export class OrganizationAdmissionError extends Error {
+  constructor(readonly code: string, readonly status = 422) {
+    super(code)
+  }
+}
+
 export function readRegistryCacheMaxAgeMs(environment: Readonly<Record<string, string | undefined>>): number {
   const value = environment.ANTIFRAUD_ICA_REGISTRY_CACHE_MAX_AGE_HOURS?.trim() ?? '72'
   const milliseconds = Number(value) * 60 * 60 * 1000
@@ -125,21 +131,21 @@ export class OrganizationAdmissionVerifier {
   async verify(command: OrganizationAdmissionCommand): Promise<OrganizationAdmissionEvidence> {
     const scope = normalizedScope(command)
     const profile = this.profiles.get(scopeKey(scope))
-    if (!profile) throw new Error('organization_admission_scope_unsupported')
+    if (!profile) throw new OrganizationAdmissionError('organization_admission_scope_unsupported')
     if (!command.actorReference.trim() || !command.proofReference.trim()) {
-      throw new Error('organization_admission_request_invalid')
+      throw new OrganizationAdmissionError('organization_admission_request_invalid', 400)
     }
     const identifier = profile.normalizeIdentifier(command.identifier)
-    if (!identifier) throw new Error('organization_admission_identifier_invalid')
+    if (!identifier) throw new OrganizationAdmissionError('organization_admission_identifier_invalid')
     const input = { ...scope, identifier, actorReference: command.actorReference, proofReference: command.proofReference }
-    if (await this.ports.authorize(input) !== true) throw new Error('organization_admission_unauthorized')
+    if (await this.ports.authorize(input) !== true) throw new OrganizationAdmissionError('organization_admission_unauthorized', 403)
 
     const source = await this.readRegistry(profile, scope, identifier)
 
     const proof = await profile.verifyProof(input)
-    if (!proof?.reference.trim()) throw new Error('organization_proof_unverified')
+    if (!proof?.reference.trim()) throw new OrganizationAdmissionError('organization_proof_unverified')
     if (!matches(identifier, profile.normalizeIdentifier(proof.identifier))) {
-      throw new Error('organization_proof_identifier_mismatch')
+      throw new OrganizationAdmissionError('organization_proof_identifier_mismatch')
     }
     const evidence: OrganizationAdmissionEvidence = {
       ...scope, actorReference: command.actorReference, identifier, registry: source,
@@ -158,21 +164,21 @@ export class OrganizationAdmissionVerifier {
     const registry = live === 'unavailable' && maxAgeMs > 0 ? await profile.lookupCached?.(identifier) : live
     if (source === 'cache' && (!registry || registry === 'unavailable')) {
       this.warn({ ...scope, reason: 'unavailable', maxAgeMs })
-      throw new Error('organization_registry_unavailable')
+      throw new OrganizationAdmissionError('organization_registry_unavailable', 503)
     }
-    if (!registry || registry === 'unavailable') throw new Error('organization_registry_not_found')
+    if (!registry || registry === 'unavailable') throw new OrganizationAdmissionError('organization_registry_not_found')
     const observed = verifiedRegistrySource(registry, source)
     if (source === 'cache') {
       const age = (this.ports.now?.() ?? Date.now()) - Date.parse(observed.checkedAt)
       if (!Number.isFinite(age) || age < 0 || age > maxAgeMs) {
         this.warn({ ...scope, reason: 'cache-unusable', checkedAt: observed.checkedAt, maxAgeMs })
-        throw new Error('organization_registry_cache_unusable')
+        throw new OrganizationAdmissionError('organization_registry_cache_unusable', 503)
       }
       this.warn({ ...scope, reason: 'cache-used', checkedAt: observed.checkedAt, maxAgeMs })
     }
-    if (registry.active !== true) throw new Error('organization_registry_inactive')
+    if (registry.active !== true) throw new OrganizationAdmissionError('organization_registry_inactive')
     if (!matches(identifier, profile.normalizeIdentifier(registry.identifier))) {
-      throw new Error('organization_registry_identifier_mismatch')
+      throw new OrganizationAdmissionError('organization_registry_identifier_mismatch')
     }
     return observed
   }
