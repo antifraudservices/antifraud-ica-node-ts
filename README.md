@@ -63,6 +63,36 @@ used by a gateway. No legacy verification endpoint is added by this runtime.
 
 ## Remaining service modules
 
+### Organization admission and registry fallback
+
+The admission verifier selects a profile by network, jurisdiction and sector.
+A profile supplies the authoritative registry lookup and the verifier for
+the required proof. ICA compares the legal identifier from the registry with
+the organization identifier established by the proof before storing evidence.
+
+The verifier reads the official source first. A temporary outage permits a
+cached observation when the profile has a cache adapter and the observation
+is within the configured age. A live inactive status or a live result with
+no matching organization takes precedence. Cache evidence retains the
+official source URL, the original observation timestamp and its cache origin.
+
+Set `ANTIFRAUD_ICA_REGISTRY_CACHE_MAX_AGE_HOURS` in the pod environment,
+for example via its ConfigMap. The default is `72`. A value of `0` disables
+fallback. A profile may apply a shorter limit. The cache adapter must
+preserve the time when it actually observed the record at the source.
+
+The structured `organization_registry_fallback` warning identifies the
+network, jurisdiction, sector and reason. When a cache observation is
+available, it includes the observation timestamp and the effective age limit.
+Route a log alert for this event to the designated ICA controller's email
+through the deployment's monitoring system. No alert includes legal
+identifiers, registry URLs, contact details or proof references.
+
+This verifier is a service module. The HTTP runtime still requires configured
+registry, proof, authorization and evidence-storage adapters for admission.
+
+### Provider integrations
+
 - trusted-verifier integration;
 - authoritative-index provider adapters;
 - policy and capability evaluation;

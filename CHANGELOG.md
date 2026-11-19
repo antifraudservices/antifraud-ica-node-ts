@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add a scoped organization admission evidence verifier with authoritative
+  registry matching, Spanish NIF/VAT correlation and bounded registry cache
+  fallback. Record the observation time and emit a structured warning on outage.
+
 - Add an explicitly enabled, loopback-only local test runtime alongside the
   staging Demo runtime. Reuse issuance, authorization, readback and receipt
   ports with synthetic local fixtures; reject production and mismatched
