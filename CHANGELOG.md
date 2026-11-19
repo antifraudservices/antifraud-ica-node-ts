@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- Include the exact submitted proof reference next to its verified provider
+  reference in persisted organization admission evidence.
+
+- Bind the required application field checks to the same PDF as the verified
+  certificate signature before reporting the signed-template check.
+
+- Require a successful certificate validation report for the pinned policy,
+  exact document digest, organization authority and admission scope.
+
+- Retrieve a scoped PDF from the configured private application source,
+  verify the SHA-256 digest and forward the bytes to the proof verifier.
+
+- Add a Test Network admission runtime with scoped Gateway authentication,
+  configured HTTPS evidence adapters and durable-provider acknowledgement.
+
+- Add a scoped organization admission evidence verifier with authoritative
+  registry matching, Spanish NIF/VAT correlation and bounded registry cache
+  fallback. Record the observation time and emit a structured warning on outage.
+- Expose organization evidence verification over authenticated HTTP when the
+  provider configures the verifier and its adapters.
+- Report verified admission checks for the configured signed template and for
+  a matching active organization in the exact regional sector directory.
+
 - Add an explicitly enabled, loopback-only local test runtime alongside the
   staging Demo runtime. Reuse issuance, authorization, readback and receipt
   ports with synthetic local fixtures; reject production and mismatched
