@@ -1,4 +1,4 @@
-// Flow contract: an authorized applicant must match an active official registry record and a verified organization proof in the exact jurisdiction and sector before ICA stores evidence.
+// Flow contract: an authorized applicant must match registry and proof in the exact scope; template and sector-directory checks are asserted only from trusted matching adapters.
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import test from 'node:test'
@@ -15,13 +15,14 @@ const command = {
   jurisdiction: 'ES',
   sector: 'animal-research',
   identifier: { scheme: 'NIF', value: 'B00000001' },
-  proofReference: 'urn:example:document',
+  proofReference: `urn:sha256:${'a'.repeat(64)}`,
 }
 const checkedAt = '2026-01-01T12:00:00.000Z'
 
 function setup({
   active = true, authorized = true, certificateValue = 'VATES-B00000001',
   source = 'live', maxRegistryCacheAgeMs, now = Date.parse(checkedAt), cacheHours = '72', useDefaultLogger = false,
+  validTemplate, templateFieldsValid = true, templateDocumentSha256, sectorEntry,
 } = {}) {
   const calls = []
   const evidence = []
@@ -38,6 +39,8 @@ function setup({
       jurisdiction: command.jurisdiction,
       sector: command.sector,
       method: 'pdf-certificate',
+      signaturePolicyId: 'test-signature-policy',
+      acceptedTemplateVersion: 'application-v2',
       maxRegistryCacheAgeMs,
       normalizeIdentifier: normalizeSpanishOrganizationIdentifier,
       async lookup(identifier) {
@@ -57,8 +60,19 @@ function setup({
         return {
           identifier: { scheme: 'VAT', value: certificateValue },
           reference: 'urn:example:verified-document',
+          certificateValidation: {
+            indication: 'TOTAL_PASSED', documentSha256: input.proofReference.slice('urn:sha256:'.length),
+            policyId: 'test-signature-policy', completeDocumentCovered: true, organizationAuthorityVerified: true,
+            ...input.admissionBinding, actorReference: input.actorReference, network: input.network,
+            jurisdiction: input.jurisdiction, sector: input.sector, reportReference: 'urn:example:validation-report',
+          },
+          ...(validTemplate ? { verifiedTemplate: {
+            version: validTemplate, requiredFieldsVerified: templateFieldsValid,
+            documentSha256: templateDocumentSha256 ?? input.proofReference.slice('urn:sha256:'.length),
+          } } : {}),
         }
       },
+      ...(sectorEntry ? { lookupSectorDirectory: async () => sectorEntry } : {}),
     }],
     async authorize() { calls.push('authorization'); return authorized },
     async saveEvidence(value) { evidence.push(value) },
@@ -77,7 +91,36 @@ test('stores official source and timestamp when the certificate and registry ide
   assert.deepEqual(result.registry, {
     active: true, source: 'live', sourceUrl: 'https://registry.example/organizations/01', checkedAt,
   })
-  assert.deepEqual(result.proof, { method: 'pdf-certificate', reference: 'urn:example:verified-document' })
+  assert.deepEqual(result.proof, {
+    method: 'pdf-certificate', reference: 'urn:example:verified-document', submittedReference: command.proofReference,
+    certificate: {
+      reportReference: 'urn:example:validation-report', documentSha256: 'a'.repeat(64), policyId: 'test-signature-policy',
+    },
+  })
+})
+
+test('reports the verified template and exact regional directory entry without inferring either from a PDF', async () => {
+  const sectorEntry = {
+    ...command, active: true, sourceUrl: 'https://directory.example/organizations/01', checkedAt,
+  }
+  const configured = await setup({ validTemplate: 'application-v2', sectorEntry }).verifier.verify(command)
+  assert.deepEqual(configured.checks, [
+    'legal-identifier-match', 'official-registry-active', 'signed-application-template', 'regional-marketplace-entry',
+  ])
+  assert.equal(configured.templateVersion, 'application-v2')
+  assert.equal(configured.sectorDirectory.sourceUrl, sectorEntry.sourceUrl)
+  assert.deepEqual((await setup().verifier.verify(command)).checks, ['legal-identifier-match', 'official-registry-active'])
+  assert.equal((await setup({ validTemplate: 'application-v1' }).verifier.verify(command)).checks.includes('signed-application-template'), false)
+  const unverifiedFields = await setup({ validTemplate: 'application-v2', templateFieldsValid: false }).verifier.verify(command)
+  assert.equal(unverifiedFields.checks.includes('signed-application-template'), false)
+  const differentDocument = await setup({ validTemplate: 'application-v2', templateDocumentSha256: 'b'.repeat(64) }).verifier.verify(command)
+  assert.equal(differentDocument.checks.includes('signed-application-template'), false)
+  const wrongRegion = await setup({ sectorEntry: { ...sectorEntry, jurisdiction: 'ES-MD' } }).verifier.verify(command)
+  assert.equal(wrongRegion.checks.includes('regional-marketplace-entry'), false)
+  const wrongIdentifier = await setup({
+    sectorEntry: { ...sectorEntry, identifier: { scheme: 'NIF', value: 'B00000002' } },
+  }).verifier.verify(command)
+  assert.equal(wrongIdentifier.checks.includes('regional-marketplace-entry'), false)
 })
 
 test('accepts a current cache under the scope policy and records when the official source was checked', async () => {
@@ -185,6 +228,27 @@ test('HTTP admission verifies a server-authenticated actor and stores evidence',
   assert.equal(unsupported.status, 422)
   assert.deepEqual(await unsupported.json(), { error: 'organization_admission_scope_unsupported' })
   assert.equal(evidence.length, 1)
+})
+
+test('HTTP admission binds evidence to the application resolved by the trusted caller adapter', async t => {
+  const { verifier } = setup()
+  const admissionBinding = { hostDid: 'did:web:host.example', applicationId: 'application-1' }
+  const server = createIcaHttpServer({
+    organizationAdmissionVerifier: verifier,
+    async resolveActor() { return { actorReference: command.actorReference, admissionBinding } },
+  })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  t.after(() => server.close())
+  const url = `http://127.0.0.1:${server.address().port}/organization-verifications`
+  const { actorReference, ...body } = command
+  const post = payload => fetch(url, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload),
+  })
+  const verified = await post(body)
+  assert.equal(verified.status, 200)
+  assert.deepEqual((await verified.json()).admissionBinding, admissionBinding)
+  assert.equal((await post({ ...body, admissionBinding })).status, 400)
 })
 
 test('logs the 72-hour cache decision without including the organization identifier or contact', async t => {

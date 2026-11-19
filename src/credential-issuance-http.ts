@@ -9,7 +9,7 @@ import {
 } from 'antifraud-data-utils-ts'
 
 import {AuthoritativeIssuanceManager} from './authoritative-issuance-manager.js'
-import {OrganizationAdmissionError, type OrganizationAdmissionCommand, type OrganizationAdmissionVerifier} from './organization-admission-verifier.js'
+import {OrganizationAdmissionError, type OrganizationAdmissionBinding, type OrganizationAdmissionCommand, type OrganizationAdmissionVerifier} from './organization-admission-verifier.js'
 import {ICA_NETWORK_KINDS, type IcaNetworkKind} from './portable/network-kind.js'
 
 export interface CredentialIssuanceStore {
@@ -32,11 +32,12 @@ export class InMemoryCredentialIssuanceStore implements CredentialIssuanceStore 
 
 export interface ResolvedIssuanceActor {
   actorReference: string
+  admissionBinding?: OrganizationAdmissionBinding
 }
 
 export interface IcaHttpServerOptions {
-  manager: AuthoritativeIssuanceManager
-  store: CredentialIssuanceStore
+  manager?: AuthoritativeIssuanceManager
+  store?: CredentialIssuanceStore
   resolveActor(request: IncomingMessage): Promise<ResolvedIssuanceActor | undefined>
   organizationAdmissionVerifier?: OrganizationAdmissionVerifier
 }
@@ -65,7 +66,7 @@ async function readJson(request: IncomingMessage, maxBytes = Infinity): Promise<
   return parsed as JsonObject
 }
 
-function parseOrganizationAdmissionRequest(body: JsonObject, actorReference: string): OrganizationAdmissionCommand {
+function parseOrganizationAdmissionRequest(body: JsonObject, actor: ResolvedIssuanceActor): OrganizationAdmissionCommand {
   const allowedKeys = new Set(['network', 'jurisdiction', 'sector', 'identifier', 'proofReference'])
   const network = body.network as IcaNetworkKind
   const identifier = body.identifier as JsonObject | undefined
@@ -80,7 +81,8 @@ function parseOrganizationAdmissionRequest(body: JsonObject, actorReference: str
     throw new TypeError('Invalid organization verification request')
   }
   return {
-    actorReference, network, jurisdiction: body.jurisdiction, sector: body.sector,
+    actorReference: actor.actorReference, network, jurisdiction: body.jurisdiction, sector: body.sector,
+    ...(actor.admissionBinding ? { admissionBinding: actor.admissionBinding } : {}),
     identifier: {scheme: identifier.scheme, value: identifier.value}, proofReference: body.proofReference,
   }
 }
@@ -127,6 +129,7 @@ async function handleRequest(
     return
   }
 
+
   if (request.method === 'POST' && pathname === '/organization-verifications') {
     const actor = await options.resolveActor(request)
     if (!actor?.actorReference) {
@@ -137,7 +140,7 @@ async function handleRequest(
       sendJson(response, 503, {error: 'organization-verification-unavailable'})
       return
     }
-    const command = parseOrganizationAdmissionRequest(await readJson(request, 16 * 1024), actor.actorReference)
+    const command = parseOrganizationAdmissionRequest(await readJson(request, 16 * 1024), actor)
     try {
       const evidence = await options.organizationAdmissionVerifier.verify(command)
       sendJson(response, 200, {...evidence})
@@ -151,7 +154,7 @@ async function handleRequest(
     return
   }
 
-  if (request.method === 'POST' && pathname === '/credential-issuances') {
+  if (options.manager && options.store && request.method === 'POST' && pathname === '/credential-issuances') {
     const body = await readJson(request)
     const canonicalRequest = parseRequest(body)
     const actor = await options.resolveActor(request)
@@ -170,7 +173,7 @@ async function handleRequest(
     return
   }
 
-  if (request.method === 'GET') {
+  if (options.store && request.method === 'GET') {
     const issuanceId = issuanceIdFromPath(pathname)
     if (issuanceId) {
       const actor = await options.resolveActor(request)

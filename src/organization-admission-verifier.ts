@@ -11,10 +11,13 @@ export interface OrganizationAdmissionScope {
   sector: string
 }
 
+export type OrganizationAdmissionBinding = Readonly<{ hostDid: string; applicationId: string }>
+
 export interface OrganizationAdmissionCommand extends OrganizationAdmissionScope {
   actorReference: string
   identifier: OrganizationLegalIdentifier
   proofReference: string
+  admissionBinding?: OrganizationAdmissionBinding
 }
 
 interface RegistryObservation {
@@ -29,17 +32,41 @@ interface RegistryObservation {
 interface VerifiedOrganizationProof {
   /** Organization bound by the proof, such as the entity represented by the signer. */
   identifier: OrganizationLegalIdentifier
-  /** Reference to the provider's verified evidence, separate from the submitted reference. */
+  /** Immutable provider reference for this verified proof. It changes when the proof is replaced. */
   reference: string
+  /** Returned only after validating the signed template and its required fields. */
+  verifiedTemplate?: { version: string; requiredFieldsVerified: true; documentSha256: string }
+  certificateValidation?: unknown
 }
+
+type CertificateEvidence = Readonly<{ reportReference: string; documentSha256: string; policyId: string }>
+
+function confirmedCertificate(command: OrganizationAdmissionCommand, policyId: string, value: unknown): CertificateEvidence | undefined {
+  const documentSha256 = /^urn:sha256:([a-f0-9]{64})$/.exec(command.proofReference)?.[1]
+  if (!documentSha256 || !value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const report = value as Record<string, unknown>
+  if (report.indication !== 'TOTAL_PASSED' || report.documentSha256 !== documentSha256 || report.policyId !== policyId
+    || report.completeDocumentCovered !== true || report.organizationAuthorityVerified !== true
+    || report.hostDid !== command.admissionBinding?.hostDid || report.applicationId !== command.admissionBinding?.applicationId
+    || report.actorReference !== command.actorReference || report.network !== command.network
+    || report.jurisdiction !== command.jurisdiction || report.sector !== command.sector
+    || typeof report.reportReference !== 'string' || !report.reportReference.trim() || report.reportReference.length > 512) return undefined
+  return { reportReference: report.reportReference, documentSha256, policyId }
+}
+
+type SectorDirectoryObservation = RegistryObservation & Pick<OrganizationAdmissionScope, 'jurisdiction' | 'sector'>
 
 export interface OrganizationAdmissionProfile extends OrganizationAdmissionScope {
   method: 'pdf-certificate' | 'organization-controller-vp' | 'official-contact'
+  acceptedTemplateVersion?: string
+  signaturePolicyId?: string
   normalizeIdentifier(identifier: OrganizationLegalIdentifier): OrganizationLegalIdentifier | undefined
   maxRegistryCacheAgeMs?: number
   /** Return unavailable only for a temporary source outage; undefined means an authoritative miss. */
   lookup(identifier: OrganizationLegalIdentifier): Promise<RegistryObservation | 'unavailable' | undefined>
   lookupCached?(identifier: OrganizationLegalIdentifier): Promise<RegistryObservation | undefined>
+  /** Reads the authoritative directory for this sector and jurisdiction. */
+  lookupSectorDirectory?(identifier: OrganizationLegalIdentifier): Promise<SectorDirectoryObservation | 'unavailable' | undefined>
   /** Authenticate the proof and its actor binding before returning an organization. */
   verifyProof(input: OrganizationAdmissionCommand): Promise<VerifiedOrganizationProof | undefined>
 }
@@ -48,7 +75,16 @@ export interface OrganizationAdmissionEvidence extends OrganizationAdmissionScop
   actorReference: string
   identifier: OrganizationLegalIdentifier
   registry: { active: true; source: 'live' | 'cache'; sourceUrl: string; checkedAt: string }
-  proof: { method: OrganizationAdmissionProfile['method']; reference: string }
+  proof: {
+    method: OrganizationAdmissionProfile['method']
+    reference: string
+    submittedReference: string
+    certificate?: CertificateEvidence
+  }
+  checks: readonly ('legal-identifier-match' | 'official-registry-active' | 'signed-application-template' | 'regional-marketplace-entry')[]
+  templateVersion?: string
+  sectorDirectory?: OrganizationAdmissionEvidence['registry']
+  admissionBinding?: OrganizationAdmissionBinding
 }
 
 export interface OrganizationAdmissionPorts {
@@ -121,6 +157,9 @@ export class OrganizationAdmissionVerifier {
     for (const profile of ports.profiles) {
       const key = scopeKey(normalizedScope(profile))
       if (this.profiles.has(key)) throw new Error('organization_admission_scope_duplicate')
+      if (profile.method === 'pdf-certificate' && !profile.signaturePolicyId?.trim()) {
+        throw new Error('organization_admission_signature_policy_required')
+      }
       if (profile.maxRegistryCacheAgeMs !== undefined && (
         !Number.isSafeInteger(profile.maxRegistryCacheAgeMs) || profile.maxRegistryCacheAgeMs < 0
       )) throw new Error('organization_registry_cache_age_invalid')
@@ -137,19 +176,48 @@ export class OrganizationAdmissionVerifier {
     }
     const identifier = profile.normalizeIdentifier(command.identifier)
     if (!identifier) throw new OrganizationAdmissionError('organization_admission_identifier_invalid')
-    const input = { ...scope, identifier, actorReference: command.actorReference, proofReference: command.proofReference }
+    const admissionBinding = command.admissionBinding
+    if (admissionBinding && (!admissionBinding.hostDid.startsWith('did:') || !admissionBinding.applicationId.trim())) {
+      throw new OrganizationAdmissionError('organization_admission_binding_invalid', 400)
+    }
+    const input = { ...scope, identifier, actorReference: command.actorReference, proofReference: command.proofReference,
+      ...(admissionBinding ? { admissionBinding } : {}),
+    }
     if (await this.ports.authorize(input) !== true) throw new OrganizationAdmissionError('organization_admission_unauthorized', 403)
 
     const source = await this.readRegistry(profile, scope, identifier)
 
     const proof = await profile.verifyProof(input)
     if (!proof?.reference.trim()) throw new OrganizationAdmissionError('organization_proof_unverified')
+    const certificate = profile.method === 'pdf-certificate'
+      ? confirmedCertificate(input, profile.signaturePolicyId!, proof.certificateValidation)
+      : undefined
+    if (profile.method === 'pdf-certificate' && !certificate) throw new OrganizationAdmissionError('organization_proof_unverified')
     if (!matches(identifier, profile.normalizeIdentifier(proof.identifier))) {
       throw new OrganizationAdmissionError('organization_proof_identifier_mismatch')
     }
+    const checks: Array<OrganizationAdmissionEvidence['checks'][number]> = ['legal-identifier-match', 'official-registry-active']
+    const template = proof.verifiedTemplate
+    const templateVersion = certificate && profile.acceptedTemplateVersion
+      && template?.version === profile.acceptedTemplateVersion && template.requiredFieldsVerified === true
+      && template.documentSha256 === certificate.documentSha256 ? template.version : undefined
+    if (templateVersion) checks.push('signed-application-template')
+    const observation = await profile.lookupSectorDirectory?.(identifier)
+    const sectorDirectory = observation && observation !== 'unavailable'
+      && observation.active === true && observation.jurisdiction === scope.jurisdiction
+      && observation.sector === scope.sector && matches(identifier, profile.normalizeIdentifier(observation.identifier))
+      ? verifiedRegistrySource(observation, 'live')
+      : undefined
+    if (sectorDirectory) checks.push('regional-marketplace-entry')
     const evidence: OrganizationAdmissionEvidence = {
       ...scope, actorReference: command.actorReference, identifier, registry: source,
-      proof: { method: profile.method, reference: proof.reference },
+      proof: {
+        method: profile.method, reference: proof.reference, submittedReference: input.proofReference,
+        ...(certificate ? { certificate } : {}),
+      },
+      checks, ...(templateVersion ? { templateVersion } : {}),
+      ...(sectorDirectory ? { sectorDirectory } : {}),
+      ...(admissionBinding ? { admissionBinding } : {}),
     }
     await this.ports.saveEvidence(evidence)
     return evidence

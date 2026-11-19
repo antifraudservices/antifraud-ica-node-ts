@@ -94,7 +94,70 @@ The request supplies `network`, `jurisdiction`, `sector`, `identifier`
 with `scheme` and `value`, and a `proofReference`. The runtime resolves the
 actor from the authenticated request. Evidence verification requires the
 registry, proof, authorization and evidence-storage adapters, and precedes
-the separate decision to admit the organization.
+the separate decision to admit the organization. The decision caller checks
+the authenticated actor and `proof.submittedReference` against its request
+before using the checks. The provider's immutable verified reference remains
+available separately in `proof.reference`.
+
+The admission-only Test Network runtime starts with
+`ANTIFRAUD_DEPLOYMENT_STAGE=test-network`. Configure the exact host DID and
+Gateway secret with `ANTIFRAUD_ICA_ADMISSION_HOST_DID` and
+`ANTIFRAUD_ICA_ADMISSION_GATEWAY_TOKEN`. The authenticated Gateway supplies
+the actor and application ID in `X-Admission-Actor` and
+`X-Admission-Application-Id`. The default Demo runtime does not use this
+configuration.
+
+Set `ANTIFRAUD_ICA_ADMISSION_PROFILES_JSON` to the enabled jurisdiction and
+sector pairs. Each entry includes `jurisdiction`, `sector` and `method`.
+PDF certificate profiles require a `signaturePolicyId` and can pin an
+`acceptedTemplateVersion`. Configure the trusted
+provider through `ANTIFRAUD_ICA_ADMISSION_PROVIDER_URL` and
+`ANTIFRAUD_ICA_ADMISSION_PROVIDER_TOKEN`. ICA posts to these paths under the
+configured HTTPS base URL:
+
+| Path | Provider responsibility |
+| --- | --- |
+| `registry` | Resolve the exact legal identifier in the official registry and return its status, source URL and observation timestamp. |
+| `registry-cache` | Return the previously observed registry record if available. ICA enforces its age limit. |
+| `proof` | Resolve the submitted reference for the authorized application and actor, verify the proof and return the matching identifier, the original submitted reference, an immutable verified reference and the template validation result when available. A PDF digest refers to stored bytes that the provider must retrieve and verify. |
+| `directory` | Return an active regional sector record with its jurisdiction, sector, legal identifier, source URL and observation timestamp. An unavailable directory leaves this check unconfirmed. |
+| `evidence` | Persist the full verification result before acknowledging the request with HTTP 200, 201 or 204. |
+
+For a PDF certificate profile, `proof` also returns a
+`certificateValidation` record with:
+
+- `indication` equal to `TOTAL_PASSED` under the configured `policyId`;
+- `documentSha256` and `reportReference` for the exact verified document and
+  its provider-held report;
+- `completeDocumentCovered` and `organizationAuthorityVerified` both set to
+  true after checking the signed document and the signer's authority;
+- the matching `hostDid`, `applicationId`, `actorReference`, `network`,
+  `jurisdiction` and `sector`.
+
+Return `verifiedTemplate` with `version`, `documentSha256` and
+`requiredFieldsVerified: true` after validating all mandatory fields of the
+configured application template. The template digest must match the digest
+in the successful certificate report. The ICA includes
+`signed-application-template` in the evidence when both validations match
+the configured version and the submitted document.
+
+The provider owns cryptographic validation and normalizes its report into
+this record. The ICA compares the record with the current request and stores
+the matching report reference with the evidence. A validation indication
+describes the result under the provider's validation policy.
+[DSS validation reporting](https://ec.europa.eu/digital-building-blocks/DSS/webapp-demo/doc/dss-documentation.html#_signature_validation_and_reports)
+
+Keep configured secrets and evidence stores private. The runtime can use the
+provider only once these adapters and its scoped proof records are available.
+
+To retrieve PDF bytes from the application owner, configure
+`ANTIFRAUD_ICA_ADMISSION_DOCUMENT_URL` and
+`ANTIFRAUD_ICA_ADMISSION_DOCUMENT_TOKEN`. For a PDF certificate profile,
+ICA reads the authorized application by scope, verifies the document digest
+and sends its bytes to the configured proof provider as `pdfBase64`. The
+evidence store receives the resulting proof reference and checks. A generated
+application draft can be resolved by digest. Only the proof provider can
+establish that the document has a valid certificate signature.
 
 ### Provider integrations
 
