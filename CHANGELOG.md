@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Verify OpenID4VCI wallet proofs and consume an offer-bound nonce before passing the holder key to the credential signer.
+
 - Include the exact submitted proof reference next to its verified provider
   reference in persisted organization admission evidence.
 
