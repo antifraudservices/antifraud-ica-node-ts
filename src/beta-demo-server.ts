@@ -20,23 +20,23 @@ function bearerCredential(authorization: string | undefined): string | undefined
   return authorization?.match(/^Bearer\s+(.+)$/iu)?.[1]?.trim()
 }
 
-export function createIcaBetaDemoServer(environment: Environment, walletIssuance?: WalletIssuanceOptions): Server {
+export function createIcaBetaDemoServer(environment: Environment): Server {
   if (environment.ANTIFRAUD_DEPLOYMENT_STAGE !== 'staging' || environment.ANTIFRAUD_NETWORK_KIND !== 'demo') {
     throw new Error('The disposable ICA Demo runtime is allowed only in the staging Demo profile.')
   }
-  return createSyntheticIcaServer(environment, 'beta', 'did:web:host-beta.antifraud.services:ica', walletIssuance)
+  return createSyntheticIcaServer(environment, 'beta', 'did:web:host-beta.antifraud.services:ica')
 }
 
 /** Explicit all-local authority composition; it never enables deployed authority. */
-export function createIcaLocalTestServer(environment: Environment, walletIssuance?: WalletIssuanceOptions): Server {
+export function createIcaLocalTestServer(environment: Environment): Server {
   if (environment.ANTIFRAUD_DEPLOYMENT_STAGE !== 'test' || environment.ANTIFRAUD_NETWORK_KIND !== 'test'
     || environment.NODE_ENV === 'production') throw new Error('The local ICA requires the test deployment and test network.')
   const issuer = required(environment, 'ANTIFRAUD_ICA_ISSUER_DID', 8)
   if (!issuer.startsWith('did:web:')) throw new Error('The local ICA issuer must be a configured did:web authority.')
-  return createSyntheticIcaServer(environment, 'local', issuer, walletIssuance)
+  return createSyntheticIcaServer(environment, 'local', issuer)
 }
 
-function createSyntheticIcaServer(environment: Environment, profile: 'beta' | 'local', issuer: string, walletIssuance?: WalletIssuanceOptions): Server {
+function createSyntheticIcaServer(environment: Environment, profile: 'beta' | 'local', issuer: string): Server {
   if (environment.NODE_ENV === 'production') throw new Error('Synthetic ICA authority is unavailable in production.')
   if (environment.ANTIFRAUD_ICA_DEMO_ENABLED !== 'true') {
     throw new Error('The disposable ICA Demo runtime must be explicitly enabled.')
@@ -112,7 +112,6 @@ function createSyntheticIcaServer(environment: Environment, profile: 'beta' | 'l
   return createIcaHttpServer({
     manager,
     store,
-    ...(walletIssuance ? {walletIssuance} : {}),
     resolveActor: async request => bearerCredential(request.headers.authorization) === bearer
       ? {actorReference}
       : {actorReference: ''},
