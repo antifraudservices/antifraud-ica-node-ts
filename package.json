@@ -10,6 +10,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "test": "npm run build && node --test test/*.test.mjs",
+    "test:wallet-offers:firestore": "npm run build && node --test test/wallet-offers-firestore.live.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prepublishOnly": "node -e \"throw new Error('This deployable service must not be published to npm')\""
   },
@@ -27,6 +28,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@google-cloud/firestore": "8.7.1",
     "antifraud-data-utils-ts": "0.1.4"
   }
 }
