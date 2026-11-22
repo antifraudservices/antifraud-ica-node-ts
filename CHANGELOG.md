@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Verify OpenID4VCI wallet proofs and consume an offer-bound nonce before passing the holder key to the credential signer.
+- Add OpenID4VCI issuer metadata, nonce and credential endpoints. Verify the wallet holder proof and consume an offer-bound nonce before issuing a holder-bound credential.
 
 - Include the exact submitted proof reference next to its verified provider
   reference in persisted organization admission evidence.

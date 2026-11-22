@@ -9,6 +9,14 @@ export interface IssuanceCommand extends CredentialIssuanceRequest {
   actorReference: string
 }
 
+export class OpenId4VciProofError extends Error {
+  constructor(message: string, readonly code: 'invalid_proof' | 'invalid_nonce' = 'invalid_proof') {
+    super(message)
+  }
+}
+
+export class CredentialIssuanceDeniedError extends Error {}
+
 export interface OpenId4VciOfferBinding {
   credentialIssuer: string
   /** Atomically consumes a valid nonce within the authorized offer and actor scope. */
@@ -94,8 +102,14 @@ export class AuthoritativeIssuanceManager {
     offer: OpenId4VciOfferBinding,
   ): Promise<SignedCredentialResult> {
     return this.issueCredential(command, async () => {
-      const {holderKey, nonce} = verifyWalletProof(proof, offer.credentialIssuer, Date.parse(this.ports.clock.now()))
-      if (!await offer.consumeNonce(nonce, command)) throw new Error('Invalid or already used wallet proof nonce')
+      let verified: ReturnType<typeof verifyWalletProof>
+      try {
+        verified = verifyWalletProof(proof, offer.credentialIssuer, Date.parse(this.ports.clock.now()))
+      } catch (error) {
+        throw new OpenId4VciProofError(error instanceof Error ? error.message : 'Invalid wallet proof')
+      }
+      const {holderKey, nonce} = verified
+      if (!await offer.consumeNonce(nonce, command)) throw new OpenId4VciProofError('Invalid or already used wallet proof nonce', 'invalid_nonce')
       return holderKey
     })
   }
@@ -151,7 +165,7 @@ export class AuthoritativeIssuanceManager {
       reason,
       occurredAt: this.ports.clock.now(),
     })
-    throw new Error(reason)
+    throw new CredentialIssuanceDeniedError(reason)
   }
 }
 

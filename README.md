@@ -40,6 +40,16 @@ storage and associates the offer with the authenticated actor, capability and
 subject. The existing authorization, verification, readback and policy checks
 apply to the wallet flow.
 
+Configure `walletIssuance` on `createIcaHttpServer` to enable issuer metadata,
+`POST /nonce`, and the bearer-protected `POST /credential` endpoint. The OAuth
+authorization server must validate and bind the access grant to a specific
+credential configuration and authoritative subject. Configure an SD-JWT VC
+signer that emits `cnf.jwk` and an atomic, short-lived nonce store. This
+adapter is exercised against the real local HTTP routes. Wallet onboarding,
+issuer trust registration and presentation validation are separate integration
+acceptance steps.
+
+
 
 ## Implemented neutral core
 
