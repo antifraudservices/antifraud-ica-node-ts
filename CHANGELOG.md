@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-- Compose OpenID4VCI in the service runtime with durable offers, an
-  authenticated gateway authorization lookup, proof-of-possession validation
-  and delegated tenant signing.
+- Keep the admission runtime scoped to organization credentials. Professional
+  credential offers, wallet metadata and holder-bound issuance are served by
+  the employing organization.
 
 - Serve OpenID4VCI metadata, offers, token exchange and credential issuance
   for an issuer identified by a canonical tenant path. Bind grant codes and
