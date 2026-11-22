@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Serve OpenID4VCI metadata, offers, token exchange and credential issuance
+  for an issuer identified by a canonical tenant path. Bind grant codes and
+  proof nonces to the complete issuer identifier.
+
 - Persist wallet offers and issuer-wide nonce reservations in atomic Firestore
   transactions so that an ICA restart or a second instance cannot replay them.
 

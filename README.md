@@ -41,7 +41,12 @@ subject. The existing authorization, verification, readback and policy checks
 apply to the wallet flow.
 
 Configure `walletIssuance` on `createIcaHttpServer` to enable issuer metadata,
-`POST /nonce`, and the bearer-protected `POST /credential` endpoint. The OAuth
+`POST /nonce`, and the bearer-protected `POST /credential` endpoint.
+For an issuer URL with a path, OpenID4VCI metadata is served at
+`/.well-known/openid-credential-issuer{issuerPath}`. The offer, token, nonce and
+credential endpoints retain the issuer path before the endpoint name.
+The issuer identifier in the offer and wallet proof audience includes that
+path. The origin-only configuration keeps its existing URLs. The OAuth
 authorization server must validate and bind the access grant to a specific
 credential configuration and authoritative subject. Configure an SD-JWT VC
 signer that emits `cnf.jwk` and an atomic, short-lived nonce store. This

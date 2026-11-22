@@ -152,7 +152,8 @@ test('documents every public HTTP route in OpenAPI', () => {
 
 
 test('OpenID4VCI credential endpoint verifies the wallet proof and returns an issuer-signed holder-bound credential', async t => {
-  const issuer = 'https://issuer.example';
+  const issuerPath = '/synthetic-tenant/identity';
+  const issuer = `https://issuer.example${issuerPath}`;
   const configurationId = 'synthetic-organization-relationship';
   const command = {actorReference: 'urn:actor:server-resolved', subjectReference: 'urn:subject:synthetic',
     capability: 'identity.relationship.attest', verificationTransactionId: 'verification-synthetic-001'};
@@ -202,13 +203,15 @@ test('OpenID4VCI credential endpoint verifies the wallet proof and returns an is
   }});
   t.after(() => server.close());
   const url = await listen(server);
-  const metadata = await fetch(`${url}/.well-known/openid-credential-issuer`);
+  const metadata = await fetch(`${url}/.well-known/openid-credential-issuer${issuerPath}`);
   assert.equal(metadata.status, 200);
+  assert.equal((await fetch(`${url}/.well-known/openid-credential-issuer`)).status, 404);
+  assert.equal((await fetch(`${url}/.well-known/openid-credential-issuer/other${issuerPath}`)).status, 404);
   assert.equal((await metadata.json()).credential_endpoint, `${issuer}/credential`);
-  const oauth = await fetch(`${url}/.well-known/oauth-authorization-server`);
+  const oauth = await fetch(`${url}/.well-known/oauth-authorization-server${issuerPath}`);
   assert.equal(oauth.status, 200);
   assert.equal((await oauth.json()).token_endpoint, `${issuer}/token`);
-  const prepareOffer = (token, body) => fetch(`${url}/credential-offers`, {method: 'POST',
+  const prepareOffer = (token, body) => fetch(`${url}${issuerPath}/credential-offers`, {method: 'POST',
     headers: {authorization: `Bearer ${token}`, 'content-type': 'application/json'}, body: JSON.stringify(body)});
   const authorization = {authorization_reference: command.verificationTransactionId};
   assert.equal((await prepareOffer('other-bearer', authorization)).status, 403);
@@ -222,18 +225,19 @@ test('OpenID4VCI credential endpoint verifies the wallet proof and returns an is
   assert.equal(offerResponse.status, 200);
   assert.equal(offerResponse.headers.get('cache-control'), 'no-store');
   const offer = await offerResponse.json();
+  assert.equal(offer.credential_issuer, issuer);
   const params = new URLSearchParams({grant_type: preAuthorizedCodeGrantType,
     'pre-authorized_code': offer.grants[preAuthorizedCodeGrantType]['pre-authorized_code'], tx_code: prepared.transactionCode});
-  const exchange = () => fetch(`${url}/token`, {method: 'POST', body: params});
+  const exchange = () => fetch(`${url}${issuerPath}/token`, {method: 'POST', body: params});
   const tokenResponse = await exchange();
   assert.equal(tokenResponse.status, 200);
   const {access_token: token} = await tokenResponse.json();
   assert.equal((await exchange()).status, 400);
-  const challenge = await fetch(`${url}/nonce`, {method: 'POST'});
+  const challenge = await fetch(`${url}${issuerPath}/nonce`, {method: 'POST'});
   const {c_nonce: nonce} = await challenge.json();
   assert.equal(typeof nonce, 'string');
   const proof = makeJwt({alg: 'ES256', typ: 'openid4vci-proof+jwt', jwk: walletKey}, {aud: issuer, iat: Date.parse(clock) / 1000, nonce}, walletKeys.privateKey);
-  const request = (bearer, body) => fetch(`${url}/credential`, {method: 'POST', headers: {authorization: `Bearer ${bearer}`, 'content-type': 'application/json'}, body: JSON.stringify(body)});
+  const request = (bearer, body) => fetch(`${url}${issuerPath}/credential`, {method: 'POST', headers: {authorization: `Bearer ${bearer}`, 'content-type': 'application/json'}, body: JSON.stringify(body)});
   const body = {credential_configuration_id: configurationId, proofs: {jwt: [proof]}};
   assert.equal((await request('other-bearer', body)).status, 401);
   assert.equal((await request(token, {...body, claims: {sub: 'untrusted'}})).status, 400);
