@@ -140,6 +140,7 @@ test('documents every public HTTP route in OpenAPI', () => {
     '/credential',
     '/credential-issuances',
     '/credential-issuances/{issuanceId}',
+    '/credential-offers',
     '/credential-offers/{reference}',
     '/health',
     '/healthz',
@@ -182,7 +183,7 @@ test('OpenID4VCI credential endpoint verifies the wallet proof and returns an is
       return true;
     },
   }});
-  const prepared = await walletOffers.prepare(command, configurationId);
+
   const manager = new AuthoritativeIssuanceManager({
     authorization: {authorize: async issued => ({allowed: issued.actorReference === command.actorReference})},
     verification: {assertVerified: async id => ({verified: id === command.verificationTransactionId})},
@@ -196,6 +197,8 @@ test('OpenID4VCI credential endpoint verifies the wallet proof and returns an is
   const server = createIcaHttpServer({manager, resolveActor: async () => undefined, walletIssuance: {
     credentialIssuer: issuer, authorizationServer: issuer, credentialConfigurations: {[configurationId]: {format: 'dc+sd-jwt', vct: configurationId}},
     issueNonce: walletOffers.issueNonce, resolveGrant: walletOffers.resolveGrant, preAuthorizedOffers: walletOffers,
+    offerAuthorization: async (request, reference) => request.headers.authorization === 'Bearer provider-bearer'
+      && reference === command.verificationTransactionId ? {command, configurationId} : undefined,
   }});
   t.after(() => server.close());
   const url = await listen(server);
@@ -205,6 +208,16 @@ test('OpenID4VCI credential endpoint verifies the wallet proof and returns an is
   const oauth = await fetch(`${url}/.well-known/oauth-authorization-server`);
   assert.equal(oauth.status, 200);
   assert.equal((await oauth.json()).token_endpoint, `${issuer}/token`);
+  const prepareOffer = (token, body) => fetch(`${url}/credential-offers`, {method: 'POST',
+    headers: {authorization: `Bearer ${token}`, 'content-type': 'application/json'}, body: JSON.stringify(body)});
+  const authorization = {authorization_reference: command.verificationTransactionId};
+  assert.equal((await prepareOffer('other-bearer', authorization)).status, 403);
+  assert.equal((await prepareOffer('provider-bearer', {...authorization, claims: {sub: 'untrusted'}})).status, 400);
+  const responseOffer = await prepareOffer('provider-bearer', authorization);
+  assert.equal(responseOffer.status, 201);
+  assert.equal(responseOffer.headers.get('cache-control'), 'no-store');
+  const prepared = await responseOffer.json();
+  assert.match(prepared.transactionCode, /^\d{6}$/);
   const offerResponse = await fetch(`${url}${new URL(prepared.offerUri).pathname}`);
   assert.equal(offerResponse.status, 200);
   assert.equal(offerResponse.headers.get('cache-control'), 'no-store');

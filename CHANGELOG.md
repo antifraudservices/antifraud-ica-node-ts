@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Allow an authenticated backend to prepare a wallet offer using a
+  server-resolved authorization reference.
+
 - Add by-reference OpenID4VCI offers with a transaction code, one-time OAuth
   grant exchange and issuer-wide proof nonce replay protection.
 
