@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Persist wallet offers and issuer-wide nonce reservations in atomic Firestore
+  transactions so that an ICA restart or a second instance cannot replay them.
+
 - Allow an authenticated backend to prepare a wallet offer using a
   server-resolved authorization reference.
 

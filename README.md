@@ -69,6 +69,22 @@ the credential at `/credential`. The store must atomically mark the grant
 used and reserve the nonce across concurrent requests and offers. Retain the
 nonce reservation until its supplied expiry.
 
+`createFirestoreWalletOfferStore(firestore, issuerNamespace)` implements that
+transaction boundary across service instances. Set an issuer- and
+environment-specific namespace with an explicitly configured Firestore client.
+Grant the service account access to the selected database and configure
+Firestore TTL for `deleteAfter` on its `wallet-offers-<issuerNamespace>`
+collection group. The runtime checks expiry even before TTL removes old
+records. The storage contains opaque authorization references, PIN digests,
+and replay reservations. Keep the issuer's HMAC secret in server-side custody.
+
+Run `npm run test:wallet-offers:firestore` against the Firestore emulator with
+`FIRESTORE_EMULATOR_HOST` set to its loopback address. The test uses the
+`demo-wallet-offers` project and a disposable collection. It checks concurrent
+code exchange, nonce reuse across offers, and readback after restarting the
+issuer. The regular unit suite does not require the emulator.
+
+
 ## Implemented neutral core
 
 - authoritative issuance orchestration with injected authorization, verification, readback, policy, signer and audit ports;
