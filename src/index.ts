@@ -10,3 +10,5 @@ export * from './portable/oidc4ida-evidence-validation.js'
 export * from './portable/schemaorg-credential-validation.js'
 export * from './portable/security-mode.js'
 export * from './portable/spanish-organization-identifier.js'
+
+export * from './preauthorized-wallet-offers.js'
