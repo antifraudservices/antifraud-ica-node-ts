@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto'
 import type { IssuanceCommand } from './authoritative-issuance-manager.js'
 import type { WalletIssuanceGrant } from './credential-issuance-http.js'
+import { parseOpenIdIssuerUrl } from './openid-issuer-url.js'
 
 export const preAuthorizedCodeGrantType = 'urn:ietf:params:oauth:grant-type:pre-authorized_code'
 const offerLifetime = 5 * 60_000
@@ -38,13 +39,14 @@ export interface PreAuthorizedWalletOfferOptions {
 }
 
 export function createPreAuthorizedWalletOffers(options: PreAuthorizedWalletOfferOptions) {
-  const issuer = new URL(options.credentialIssuer)
-  if (issuer.protocol !== 'https:' || issuer.origin !== options.credentialIssuer || options.secret.length < 32) {
-    throw new TypeError('Wallet offers require a trusted HTTPS issuer and at least 32 secret bytes')
+  parseOpenIdIssuerUrl(options.credentialIssuer)
+  const credentialIssuer = options.credentialIssuer
+  if (options.secret.length < 32) {
+    throw new TypeError('Wallet offers require at least 32 secret bytes')
   }
   const now = options.now ?? Date.now
   const secret = Buffer.from(options.secret)
-  const mac = (purpose: string, value: string) => createHmac('sha256', secret).update(`${issuer.origin}\0${purpose}\0${value}`).digest('base64url')
+  const mac = (purpose: string, value: string) => createHmac('sha256', secret).update(`${credentialIssuer}\0${purpose}\0${value}`).digest('base64url')
   const equal = (left: string, right: string) => left.length === right.length
     && timingSafeEqual(Buffer.from(left), Buffer.from(right))
   const identifier = () => randomBytes(32).toString('base64url')
@@ -67,7 +69,7 @@ export function createPreAuthorizedWalletOffers(options: PreAuthorizedWalletOffe
       command: {...command}, configurationId, expiresAt: now() + offerLifetime,
       attempts: 0, revision: 0, pinDigest: mac('pin', `${reference}.${transactionCode}`), state: 'offered',
     })
-    return {offerUri: new URL(`/credential-offers/${reference}`, issuer).href, transactionCode}
+    return {offerUri: `${credentialIssuer}/credential-offers/${reference}`, transactionCode}
   }
 
   async function readOffer(reference: string) {
@@ -75,7 +77,7 @@ export function createPreAuthorizedWalletOffers(options: PreAuthorizedWalletOffe
     const entry = await options.store.read(reference)
     if (!isActive(entry, 'offered') || entry.attempts >= allowedAttempts) return undefined
     return {
-      credential_issuer: issuer.origin,
+      credential_issuer: credentialIssuer,
       credential_configuration_ids: [entry.configurationId],
       grants: {[preAuthorizedCodeGrantType]: {
         'pre-authorized_code': signedReference('code', reference),
@@ -126,5 +128,5 @@ export function createPreAuthorizedWalletOffers(options: PreAuthorizedWalletOffe
     }
   }
 
-  return {prepare, readOffer, exchange, issueNonce, resolveGrant}
+  return {credentialIssuer, prepare, readOffer, exchange, issueNonce, resolveGrant}
 }

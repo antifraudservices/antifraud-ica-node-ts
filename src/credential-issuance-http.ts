@@ -11,6 +11,7 @@ import {
 import {preAuthorizedCodeGrantType, type createPreAuthorizedWalletOffers} from './preauthorized-wallet-offers.js'
 import {AuthoritativeIssuanceManager, CredentialIssuanceDeniedError, OpenId4VciProofError, type IssuanceCommand, type OpenId4VciOfferBinding} from './authoritative-issuance-manager.js'
 import {OrganizationAdmissionError, type OrganizationAdmissionBinding, type OrganizationAdmissionCommand, type OrganizationAdmissionVerifier} from './organization-admission-verifier.js'
+import {parseOpenIdIssuerUrl} from './openid-issuer-url.js'
 import {ICA_NETWORK_KINDS, type IcaNetworkKind} from './portable/network-kind.js'
 
 export interface CredentialIssuanceStore {
@@ -225,17 +226,19 @@ async function handleRequest(
   const wallet = options.walletIssuance
   if (wallet && options.manager) {
     const offers = wallet.preAuthorizedOffers
-    if (offers && request.method === 'GET' && pathname === '/.well-known/oauth-authorization-server') {
+    const issuerPath = new URL(wallet.credentialIssuer).pathname.replace(/^\/$/u, '')
+    const offerPath = `${issuerPath}/credential-offers`
+    if (offers && request.method === 'GET' && pathname === `/.well-known/oauth-authorization-server${issuerPath}`) {
       return sendJson(response, 200, {
         issuer: wallet.authorizationServer, token_endpoint: `${wallet.authorizationServer}/token`,
         grant_types_supported: [preAuthorizedCodeGrantType], token_endpoint_auth_methods_supported: ['none'],
         'pre-authorized_grant_anonymous_access_supported': true,
       })
     }
-    if (offers && request.method === 'POST' && pathname === '/token') {
+    if (offers && request.method === 'POST' && pathname === `${issuerPath}/token`) {
       return exchangeWalletCode(request, response, offers)
     }
-    if (offers && wallet.offerAuthorization && request.method === 'POST' && pathname === '/credential-offers') {
+    if (offers && wallet.offerAuthorization && request.method === 'POST' && pathname === offerPath) {
       response.setHeader('Cache-Control', 'no-store')
       if (request.headers['content-type']?.split(';')[0]?.trim() !== 'application/json') {
         return sendJson(response, 415, {error: 'invalid_request'})
@@ -251,13 +254,13 @@ async function handleRequest(
       }
       return sendJson(response, 201, await offers.prepare(permitted.command, permitted.configurationId))
     }
-    const reference = pathname.match(/^\/credential-offers\/([A-Za-z0-9_-]{43})$/u)?.[1]
-    if (offers && reference && request.method === 'GET') {
+    const reference = pathname.startsWith(`${offerPath}/`) ? pathname.slice(offerPath.length + 1) : ''
+    if (offers && /^[A-Za-z0-9_-]{43}$/u.test(reference) && request.method === 'GET') {
       response.setHeader('Cache-Control', 'no-store')
       const offer = await offers.readOffer(reference)
       return offer ? sendJson(response, 200, offer) : sendJson(response, 404, {error: 'not_found'})
     }
-    if (request.method === 'GET' && pathname === '/.well-known/openid-credential-issuer') {
+    if (request.method === 'GET' && pathname === `/.well-known/openid-credential-issuer${issuerPath}`) {
       sendJson(response, 200, {
         credential_issuer: wallet.credentialIssuer,
         authorization_servers: [wallet.authorizationServer],
@@ -271,9 +274,10 @@ async function handleRequest(
       })
       return
     }
-    if (request.method === 'POST' && (pathname === '/nonce' || pathname === '/credential')) {
+    const isNonce = pathname === `${issuerPath}/nonce`
+    if (request.method === 'POST' && (isNonce || pathname === `${issuerPath}/credential`)) {
       response.setHeader('Cache-Control', 'no-store')
-      if (pathname === '/nonce') return sendJson(response, 200, {c_nonce: await wallet.issueNonce()})
+      if (isNonce) return sendJson(response, 200, {c_nonce: await wallet.issueNonce()})
       return issueWalletCredential(request, response, wallet, options.manager)
     }
   }
@@ -349,12 +353,11 @@ async function handleRequest(
 export function createIcaHttpServer(options: IcaHttpServerOptions): Server {
   const wallet = options.walletIssuance
   if (wallet) {
-    const issuer = new URL(wallet.credentialIssuer)
-    const authorization = new URL(wallet.authorizationServer)
-    if (!options.manager || issuer.protocol !== 'https:' || issuer.origin !== wallet.credentialIssuer
-      || authorization.protocol !== 'https:' || authorization.username || authorization.password
-      || authorization.hash || authorization.search || Object.keys(wallet.credentialConfigurations).length === 0
-      || (wallet.preAuthorizedOffers && wallet.authorizationServer !== wallet.credentialIssuer)
+    parseOpenIdIssuerUrl(wallet.credentialIssuer)
+    parseOpenIdIssuerUrl(wallet.authorizationServer)
+    if (!options.manager || Object.keys(wallet.credentialConfigurations).length === 0
+      || (wallet.preAuthorizedOffers && (wallet.authorizationServer !== wallet.credentialIssuer
+        || wallet.preAuthorizedOffers.credentialIssuer !== wallet.credentialIssuer))
       || (wallet.offerAuthorization && !wallet.preAuthorizedOffers)) {
       throw new TypeError('Invalid OpenID4VCI issuer configuration')
     }
