@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Compose OpenID4VCI in the service runtime with durable offers, an
+  authenticated gateway authorization lookup, proof-of-possession validation
+  and delegated tenant signing.
+
 - Serve OpenID4VCI metadata, offers, token exchange and credential issuance
   for an issuer identified by a canonical tenant path. Bind grant codes and
   proof nonces to the complete issuer identifier.

@@ -288,3 +288,34 @@ The first implementation increment must prove, with executable tests, that issua
 ## License
 
 Apache-2.0.
+
+### Delegated wallet issuance
+
+The service enables one configured OpenID4VCI issuer when the
+`ANTIFRAUD_ICA_WALLET_*` settings are present. Set `ISSUER` to the exact
+advertised HTTPS URL, `CONFIGURATION_ID` and `VCT` to the deployed credential
+profile, and `FIRESTORE_PROJECT` to the wallet offer store's project. The
+Firestore identity needs access to the issuer's wallet offer collection. Its
+collection group is `wallet-offers-` followed by the lowercase SHA-256 hash
+of the issuer URL. Use the same configured offer secret across issuer replicas
+and configure TTL on `deleteAfter`.
+
+Configure `GATEWAY_AUTHORIZATION_URL` and `GATEWAY_SIGNING_URL` as distinct
+fixed HTTPS URLs on the same trusted origin. Assign separate secrets to
+`INBOUND_BEARER` for gateway calls to the ICA and `OUTBOUND_BEARER` for ICA
+calls to the gateway. Each uses at least 32 random bytes encoded in base64url.
+`OFFER_SECRET` encodes exactly 32 random bytes in base64url. The signed
+credential's `iss` defaults to the advertised issuer URL. If a different
+issuer identifier is used, set `SIGNING_ISSUER` to that identifier and publish
+the applicable issuer binding.
+
+The gateway authorization endpoint receives `authorization_reference`, a
+one-use opaque 32-byte base64url reference. It reserves the reference and
+returns `{command, configurationId}` for the authenticated professional.
+The command contains opaque URNs for the actor and subject, the same
+reference as `verificationTransactionId`, and the authorized capability.
+After PIN redemption and wallet proof validation, the ICA passes only
+`{command, holderKey}` to the signing endpoint. The signing endpoint rechecks
+current eligibility and the reserved reference and returns
+`{issuanceId, credential}` signed with the tenant key. The ICA rejects a
+credential whose issuer, type or public key binding differs from the grant.

@@ -13,3 +13,5 @@ export * from './portable/spanish-organization-identifier.js'
 
 export * from './preauthorized-wallet-offers.js'
 export * from './firestore-wallet-offer-store.js'
+export * from './delegated-wallet-issuance.js'
+export * from './configured-wallet-issuance.js'
