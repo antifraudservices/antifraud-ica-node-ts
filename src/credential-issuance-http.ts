@@ -52,6 +52,7 @@ export interface WalletIssuanceOptions {
     vct: string
     scope?: string
   }>>
+  issueForWallet?: AuthoritativeIssuanceManager['issueForWallet']
   preAuthorizedOffers?: ReturnType<typeof createPreAuthorizedWalletOffers>
   /** Authenticates the backend, resolves a current authorization and reserves its one-time reference. */
   offerAuthorization?(request: IncomingMessage, reference: string): Promise<{
@@ -155,7 +156,7 @@ async function issueWalletCredential(
   request: IncomingMessage,
   response: ServerResponse,
   wallet: WalletIssuanceOptions,
-  manager: AuthoritativeIssuanceManager,
+  issueForWallet: AuthoritativeIssuanceManager['issueForWallet'],
 ): Promise<void> {
   const accessToken = /^Bearer ([^\s]+)$/i.exec(request.headers.authorization ?? '')?.[1]
   const grant = accessToken ? await wallet.resolveGrant(accessToken) : undefined
@@ -181,7 +182,7 @@ async function issueWalletCredential(
     return sendJson(response, 400, {error: 'invalid_credential_request'})
   }
   try {
-    const issued = await manager.issueForWallet({...grant.command}, proofs.jwt[0], {
+    const issued = await issueForWallet({...grant.command}, proofs.jwt[0], {
       credentialIssuer: wallet.credentialIssuer,
       consumeNonce: (nonce, command) => grant.consumeNonce(nonce, command),
     })
@@ -224,7 +225,8 @@ async function handleRequest(
 ): Promise<void> {
   const pathname = new URL(request.url ?? '/', 'http://localhost').pathname
   const wallet = options.walletIssuance
-  if (wallet && options.manager) {
+  const issueForWallet = wallet?.issueForWallet ?? options.manager?.issueForWallet.bind(options.manager)
+  if (wallet && issueForWallet) {
     const offers = wallet.preAuthorizedOffers
     const issuerPath = new URL(wallet.credentialIssuer).pathname.replace(/^\/$/u, '')
     const offerPath = `${issuerPath}/credential-offers`
@@ -278,7 +280,7 @@ async function handleRequest(
     if (request.method === 'POST' && (isNonce || pathname === `${issuerPath}/credential`)) {
       response.setHeader('Cache-Control', 'no-store')
       if (isNonce) return sendJson(response, 200, {c_nonce: await wallet.issueNonce()})
-      return issueWalletCredential(request, response, wallet, options.manager)
+      return issueWalletCredential(request, response, wallet, issueForWallet)
     }
   }
   if (request.method === 'GET' && (pathname === '/healthz' || pathname === '/health')) {
@@ -355,7 +357,7 @@ export function createIcaHttpServer(options: IcaHttpServerOptions): Server {
   if (wallet) {
     parseOpenIdIssuerUrl(wallet.credentialIssuer)
     parseOpenIdIssuerUrl(wallet.authorizationServer)
-    if (!options.manager || Object.keys(wallet.credentialConfigurations).length === 0
+    if ((!options.manager && !wallet.issueForWallet) || Object.keys(wallet.credentialConfigurations).length === 0
       || (wallet.preAuthorizedOffers && (wallet.authorizationServer !== wallet.credentialIssuer
         || wallet.preAuthorizedOffers.credentialIssuer !== wallet.credentialIssuer))
       || (wallet.offerAuthorization && !wallet.preAuthorizedOffers)) {

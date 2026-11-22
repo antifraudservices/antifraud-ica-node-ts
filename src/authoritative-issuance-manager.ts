@@ -101,17 +101,7 @@ export class AuthoritativeIssuanceManager {
     proof: string,
     offer: OpenId4VciOfferBinding,
   ): Promise<SignedCredentialResult> {
-    return this.issueCredential(command, async () => {
-      let verified: ReturnType<typeof verifyWalletProof>
-      try {
-        verified = verifyWalletProof(proof, offer.credentialIssuer, Date.parse(this.ports.clock.now()))
-      } catch (error) {
-        throw new OpenId4VciProofError(error instanceof Error ? error.message : 'Invalid wallet proof')
-      }
-      const {holderKey, nonce} = verified
-      if (!await offer.consumeNonce(nonce, command)) throw new OpenId4VciProofError('Invalid or already used wallet proof nonce', 'invalid_nonce')
-      return holderKey
-    })
+    return this.issueCredential(command, () => consumeWalletHolderProof(command, proof, offer, Date.parse(this.ports.clock.now())))
   }
 
   private async issueCredential(
@@ -202,4 +192,24 @@ function verifyWalletProof(proof: string, issuer: string, now: number): {holderK
     || payload.iat < now / 1000 - 300 || payload.iat > now / 1000 + 30) throw new Error('Wallet proof is outside its validity window')
   if (typeof payload.nonce !== 'string' || !payload.nonce) throw new Error('Wallet proof nonce is required')
   return {holderKey, nonce: payload.nonce}
+}
+
+/** Verifies possession before atomically consuming the nonce and its offer. */
+export async function consumeWalletHolderProof(
+  command: IssuanceCommand,
+  proof: string,
+  offer: OpenId4VciOfferBinding,
+  now: number,
+): Promise<JsonWebKey> {
+  let verified: ReturnType<typeof verifyWalletProof>
+  try {
+    verified = verifyWalletProof(proof, offer.credentialIssuer, now)
+  } catch (error) {
+    throw new OpenId4VciProofError(error instanceof Error ? error.message : 'Invalid wallet proof')
+  }
+  const {holderKey, nonce} = verified
+  if (!await offer.consumeNonce(nonce, command)) {
+    throw new OpenId4VciProofError('Invalid or already used wallet proof nonce', 'invalid_nonce')
+  }
+  return holderKey
 }

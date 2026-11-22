@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { createIcaHttpServer } from './credential-issuance-http.js'
+import { createIcaHttpServer, type WalletIssuanceOptions } from './credential-issuance-http.js'
 import { OrganizationAdmissionError, OrganizationAdmissionVerifier, type OrganizationAdmissionCommand, type OrganizationAdmissionProfile } from './organization-admission-verifier.js'
 import { normalizeSpanishOrganizationIdentifier } from './portable/spanish-organization-identifier.js'
 
@@ -69,7 +69,7 @@ async function readAdmissionPdf(response: Response) {
   }
 }
 
-export function createIcaTestNetworkAdmissionServer(environment: Environment, transport: typeof fetch = fetch) {
+export function createIcaTestNetworkAdmissionServer(environment: Environment, transport: typeof fetch = fetch, walletIssuance?: WalletIssuanceOptions) {
   const hostDid = environment.ANTIFRAUD_ICA_ADMISSION_HOST_DID?.trim()
   const gatewayToken = environment.ANTIFRAUD_ICA_ADMISSION_GATEWAY_TOKEN?.trim()
   const providerToken = environment.ANTIFRAUD_ICA_ADMISSION_PROVIDER_TOKEN?.trim()
@@ -186,6 +186,7 @@ export function createIcaTestNetworkAdmissionServer(environment: Environment, tr
   })
 
   return createIcaHttpServer({
+    ...(walletIssuance ? {walletIssuance} : {}),
     organizationAdmissionVerifier: new OrganizationAdmissionVerifier({
       profiles,
       authorize: async command => command.admissionBinding?.hostDid === hostDid,
