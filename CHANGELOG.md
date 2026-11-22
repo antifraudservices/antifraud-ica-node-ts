@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add OpenID4VCI issuer metadata, nonce and credential endpoints. Verify the wallet holder proof and consume an offer-bound nonce before issuing a holder-bound credential.
+
 - Include the exact submitted proof reference next to its verified provider
   reference in persisted organization admission evidence.
 

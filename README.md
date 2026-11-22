@@ -31,6 +31,26 @@ OpenID for Verifiable Presentations and the High Assurance Interoperability Prof
 
 Credential issuance is a separate endpoint and state machine. It may expose OpenID for Verifiable Credential Issuance or another documented protocol. Presentation, readback, decision, issuance, status, and revocation remain distinct audit events.
 
+`AuthoritativeIssuanceManager.issueForWallet` is the issuance boundary for an
+already-authorized OpenID4VCI offer. It verifies an ES256 wallet proof against
+the offer's credential issuer, validates its timestamp, and consumes a scoped
+nonce before handing the public holder key to the issuer's signer. The signer
+binds the issued credential to that key. The offer adapter owns atomic nonce
+storage and associates the offer with the authenticated actor, capability and
+subject. The existing authorization, verification, readback and policy checks
+apply to the wallet flow.
+
+Configure `walletIssuance` on `createIcaHttpServer` to enable issuer metadata,
+`POST /nonce`, and the bearer-protected `POST /credential` endpoint. The OAuth
+authorization server must validate and bind the access grant to a specific
+credential configuration and authoritative subject. Configure an SD-JWT VC
+signer that emits `cnf.jwk` and an atomic, short-lived nonce store. This
+adapter is exercised against the real local HTTP routes. Wallet onboarding,
+issuer trust registration and presentation validation are separate integration
+acceptance steps.
+
+
+
 ## Implemented neutral core
 
 - authoritative issuance orchestration with injected authorization, verification, readback, policy, signer and audit ports;

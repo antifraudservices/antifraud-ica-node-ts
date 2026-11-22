@@ -1,6 +1,8 @@
 // Flow contract: reuse shared test fixtures and canonical types; do not introduce duplicated literals.
+// The wallet journey additionally resolves an offer from a server-trusted token, consumes its challenge and signs a key-bound credential.
 // Journey: 1. Start the neutral ICA HTTP runtime. 2. Resolve the caller server-side. 3. Submit through the published Node SDK. 4. Authorize, verify, read authoritative claims, evaluate policy and sign. 5. Persist and reload the public receipt. Authorization invariant: caller claims and actor identity are never authoritative input. Persistence invariant: reload uses the issuance store and audit contains no subject claims.
 import assert from 'node:assert/strict'
+import {generateKeyPairSync, sign, verify} from 'node:crypto'
 import {once} from 'node:events'
 import test from 'node:test'
 
@@ -131,10 +133,75 @@ test('HTTP boundary returns health without exposing tenant or credential state',
 
 test('documents every public HTTP route in OpenAPI', () => {
   assert.deepEqual(Object.keys(icaOpenApiDocument.paths).sort(), [
+    '/.well-known/openid-credential-issuer',
+    '/credential',
     '/credential-issuances',
     '/credential-issuances/{issuanceId}',
     '/health',
     '/healthz',
+    '/nonce',
     '/organization-verifications',
   ])
 })
+
+
+test('OpenID4VCI credential endpoint verifies the wallet proof and returns an issuer-signed holder-bound credential', async t => {
+  const issuer = 'https://issuer.example';
+  const authorizationServer = 'https://authorization.example';
+  const configurationId = 'synthetic-organization-relationship';
+  const nonce = 'synthetic-issuance-challenge';
+  const command = {actorReference: 'urn:actor:server-resolved', subjectReference: 'urn:subject:synthetic',
+    capability: 'identity.relationship.attest', verificationTransactionId: 'verification-synthetic-001'};
+  const clock = '2026-10-17T00:00:00.000Z';
+  const issuerKeys = generateKeyPairSync('ec', {namedCurve: 'P-256'});
+  const walletKeys = generateKeyPairSync('ec', {namedCurve: 'P-256'});
+  const walletKey = walletKeys.publicKey.export({format: 'jwk'});
+  const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
+  const makeJwt = (header, body, key) => {
+    const message = `${encode(header)}.${encode(body)}`;
+    return `${message}.${sign('sha256', Buffer.from(message), {key, dsaEncoding: 'ieee-p1363'}).toString('base64url')}`;
+  };
+  let consumed = false;
+  const manager = new AuthoritativeIssuanceManager({
+    authorization: {authorize: async issued => ({allowed: issued.actorReference === command.actorReference})},
+    verification: {assertVerified: async id => ({verified: id === command.verificationTransactionId})},
+    index: {readAuthoritativeSubject: async reference => ({sourceId: reference, claims: {sub: reference}})},
+    policy: {evaluate: async () => ({allowed: true})},
+    signer: {issue: async ({holderKey, claims}) => ({issuanceId: 'issuance-synthetic-001', credential: `${makeJwt({alg: 'ES256', typ: 'dc+sd-jwt'}, {
+      ...claims, iss: issuer, vct: configurationId, cnf: {jwk: holderKey},
+    }, issuerKeys.privateKey)}~`})},
+    audit: {record: async () => {}}, clock: {now: () => clock},
+  });
+  const server = createIcaHttpServer({manager, resolveActor: async () => undefined, walletIssuance: {
+    credentialIssuer: issuer, authorizationServer, credentialConfigurations: {[configurationId]: {format: 'dc+sd-jwt', vct: configurationId}},
+    issueNonce: async () => nonce,
+    resolveGrant: async token => token === 'wallet-bearer' ? {command, configurationId,
+      consumeNonce: async value => { if (consumed || value !== nonce) return false; consumed = true; return true; },
+    } : undefined,
+  }});
+  t.after(() => server.close());
+  const url = await listen(server);
+  const metadata = await fetch(`${url}/.well-known/openid-credential-issuer`);
+  assert.equal(metadata.status, 200);
+  assert.equal((await metadata.json()).credential_endpoint, `${issuer}/credential`);
+  const challenge = await fetch(`${url}/nonce`, {method: 'POST'});
+  assert.equal((await challenge.json()).c_nonce, nonce);
+  const proof = makeJwt({alg: 'ES256', typ: 'openid4vci-proof+jwt', jwk: walletKey}, {aud: issuer, iat: Date.parse(clock) / 1000, nonce}, walletKeys.privateKey);
+  const request = (bearer, body) => fetch(`${url}/credential`, {method: 'POST', headers: {authorization: `Bearer ${bearer}`, 'content-type': 'application/json'}, body: JSON.stringify(body)});
+  const body = {credential_configuration_id: configurationId, proofs: {jwt: [proof]}};
+  assert.equal((await request('other-bearer', body)).status, 401);
+  assert.equal((await request('wallet-bearer', {...body, claims: {sub: 'untrusted'}})).status, 400);
+  const response = await request('wallet-bearer', body);
+  assert.equal(response.status, 200);
+  const {credentials: [{credential}]} = await response.json();
+  const [credentialHeader, credentialClaims, credentialSignature] = credential.split('~')[0].split('.');
+  assert.equal(verify('sha256', Buffer.from(`${credentialHeader}.${credentialClaims}`), {
+    key: issuerKeys.publicKey, dsaEncoding: 'ieee-p1363',
+  }, Buffer.from(credentialSignature, 'base64url')), true);
+  const claims = JSON.parse(Buffer.from(credentialClaims, 'base64url'));
+  assert.deepEqual(claims.cnf.jwk, walletKey);
+  assert.equal(claims.sub, command.subjectReference);
+  const replay = await request('wallet-bearer', body);
+  assert.equal(replay.status, 400);
+  assert.deepEqual(await replay.json(), {error: 'invalid_nonce'});
+});
