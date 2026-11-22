@@ -57,6 +57,13 @@ only after resolving the authorized actor, organization and subject from
 trusted records. Give the holder the offer URL and deliver the transaction
 code separately. Connect `preAuthorizedOffers`, `issueNonce` and
 `resolveGrant` to the same offer service instance in `walletIssuance`.
+A backend with an authorized issuance reference can request an offer with
+`POST /credential-offers` when `offerAuthorization` is configured. The adapter
+must authenticate the backend, resolve the current authorization and reserve
+that reference once. The request contains the opaque `authorization_reference`.
+The response contains the wallet offer URL and a transaction code for separate
+delivery to the authenticated holder.
+
 The wallet can then fetch the offer, exchange the code at `/token` and obtain
 the credential at `/credential`. The store must atomically mark the grant
 used and reserve the nonce across concurrent requests and offers. Retain the
