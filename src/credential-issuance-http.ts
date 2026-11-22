@@ -8,6 +8,7 @@ import {
   type IdentityAttestationCapabilityValue,
 } from 'antifraud-data-utils-ts'
 
+import {preAuthorizedCodeGrantType, type createPreAuthorizedWalletOffers} from './preauthorized-wallet-offers.js'
 import {AuthoritativeIssuanceManager, CredentialIssuanceDeniedError, OpenId4VciProofError, type IssuanceCommand, type OpenId4VciOfferBinding} from './authoritative-issuance-manager.js'
 import {OrganizationAdmissionError, type OrganizationAdmissionBinding, type OrganizationAdmissionCommand, type OrganizationAdmissionVerifier} from './organization-admission-verifier.js'
 import {ICA_NETWORK_KINDS, type IcaNetworkKind} from './portable/network-kind.js'
@@ -50,6 +51,7 @@ export interface WalletIssuanceOptions {
     vct: string
     scope?: string
   }>>
+  preAuthorizedOffers?: Pick<ReturnType<typeof createPreAuthorizedWalletOffers>, 'readOffer' | 'exchange'>
   issueNonce(): Promise<string>
   /** Verifies the OAuth grant and resolves its actor, subject and credential configuration. */
   resolveGrant(accessToken: string): Promise<WalletIssuanceGrant | undefined>
@@ -70,7 +72,7 @@ function sendJson(response: ServerResponse, statusCode: number, body: JsonObject
   response.end(JSON.stringify(body))
 }
 
-async function readJson(request: IncomingMessage, maxBytes = Infinity): Promise<JsonObject> {
+async function readBody(request: IncomingMessage, maxBytes: number): Promise<string> {
   const chunks: Buffer[] = []
   let size = 0
   for await (const chunk of request) {
@@ -80,7 +82,11 @@ async function readJson(request: IncomingMessage, maxBytes = Infinity): Promise<
     chunks.push(bytes)
   }
   if (chunks.length === 0) throw new TypeError('Request body is required')
-  const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  return Buffer.concat(chunks).toString('utf8')
+}
+
+async function readJson(request: IncomingMessage, maxBytes = Infinity): Promise<JsonObject> {
+  const parsed: unknown = JSON.parse(await readBody(request, maxBytes))
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new TypeError('Request body must be a JSON object')
   }
@@ -184,6 +190,27 @@ async function issueWalletCredential(
   }
 }
 
+async function exchangeWalletCode(request: IncomingMessage, response: ServerResponse,
+  offers: NonNullable<WalletIssuanceOptions['preAuthorizedOffers']>): Promise<void> {
+  response.setHeader('Cache-Control', 'no-store')
+  response.setHeader('Pragma', 'no-cache')
+  if (request.headers['content-type']?.split(';')[0]?.trim() !== 'application/x-www-form-urlencoded') {
+    return sendJson(response, 400, {error: 'invalid_request'})
+  }
+  const raw = await readBody(request, 8192).catch(() => undefined)
+  if (!raw) return sendJson(response, 400, {error: 'invalid_request'})
+  const form = new URLSearchParams(raw)
+  const required = ['grant_type', 'pre-authorized_code', 'tx_code']
+  if (required.some(key => form.getAll(key).length !== 1) || form.getAll('client_id').length > 1) {
+    return sendJson(response, 400, {error: 'invalid_request'})
+  }
+  if (form.get('grant_type') !== preAuthorizedCodeGrantType) {
+    return sendJson(response, 400, {error: 'unsupported_grant_type'})
+  }
+  const result = await offers.exchange(form.get('pre-authorized_code') ?? '', form.get('tx_code') ?? '')
+  return result ? sendJson(response, 200, result) : sendJson(response, 400, {error: 'invalid_grant'})
+}
+
 async function handleRequest(
   request: IncomingMessage,
   response: ServerResponse,
@@ -192,6 +219,23 @@ async function handleRequest(
   const pathname = new URL(request.url ?? '/', 'http://localhost').pathname
   const wallet = options.walletIssuance
   if (wallet && options.manager) {
+    const offers = wallet.preAuthorizedOffers
+    if (offers && request.method === 'GET' && pathname === '/.well-known/oauth-authorization-server') {
+      return sendJson(response, 200, {
+        issuer: wallet.authorizationServer, token_endpoint: `${wallet.authorizationServer}/token`,
+        grant_types_supported: [preAuthorizedCodeGrantType], token_endpoint_auth_methods_supported: ['none'],
+        'pre-authorized_grant_anonymous_access_supported': true,
+      })
+    }
+    if (offers && request.method === 'POST' && pathname === '/token') {
+      return exchangeWalletCode(request, response, offers)
+    }
+    const reference = pathname.match(/^\/credential-offers\/([A-Za-z0-9_-]{43})$/u)?.[1]
+    if (offers && reference && request.method === 'GET') {
+      response.setHeader('Cache-Control', 'no-store')
+      const offer = await offers.readOffer(reference)
+      return offer ? sendJson(response, 200, offer) : sendJson(response, 404, {error: 'not_found'})
+    }
     if (request.method === 'GET' && pathname === '/.well-known/openid-credential-issuer') {
       sendJson(response, 200, {
         credential_issuer: wallet.credentialIssuer,
@@ -288,7 +332,8 @@ export function createIcaHttpServer(options: IcaHttpServerOptions): Server {
     const authorization = new URL(wallet.authorizationServer)
     if (!options.manager || issuer.protocol !== 'https:' || issuer.origin !== wallet.credentialIssuer
       || authorization.protocol !== 'https:' || authorization.username || authorization.password
-      || authorization.hash || authorization.search || Object.keys(wallet.credentialConfigurations).length === 0) {
+      || authorization.hash || authorization.search || Object.keys(wallet.credentialConfigurations).length === 0
+      || (wallet.preAuthorizedOffers && wallet.authorizationServer !== wallet.credentialIssuer)) {
       throw new TypeError('Invalid OpenID4VCI issuer configuration')
     }
   }
@@ -306,6 +351,9 @@ export const icaOpenApiDocument = Object.freeze({
   openapi: '3.1.0',
   info: {title: 'Neutral Identity Credential Authority', version: '0.1.0'},
   paths: {
+    '/.well-known/oauth-authorization-server': {get: {operationId: 'getWalletAuthorizationServerMetadata'}},
+    '/credential-offers/{reference}': {get: {operationId: 'readWalletCredentialOffer'}},
+    '/token': {post: {operationId: 'exchangeWalletPreAuthorizedCode'}},
     '/.well-known/openid-credential-issuer': {get: {operationId: 'getWalletIssuerMetadata'}},
     '/nonce': {post: {operationId: 'createWalletProofNonce'}},
     '/credential': {post: {operationId: 'issueWalletCredential'}},

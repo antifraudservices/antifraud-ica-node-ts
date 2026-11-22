@@ -51,6 +51,17 @@ acceptance steps.
 
 
 
+For the pre-authorized code flow, call `createPreAuthorizedWalletOffers` with
+an issuer-scoped secret and a durable `WalletOfferStore`. Prepare the offer
+only after resolving the authorized actor, organization and subject from
+trusted records. Give the holder the offer URL and deliver the transaction
+code separately. Connect `preAuthorizedOffers`, `issueNonce` and
+`resolveGrant` to the same offer service instance in `walletIssuance`.
+The wallet can then fetch the offer, exchange the code at `/token` and obtain
+the credential at `/credential`. The store must atomically mark the grant
+used and reserve the nonce across concurrent requests and offers. Retain the
+nonce reservation until its supplied expiry.
+
 ## Implemented neutral core
 
 - authoritative issuance orchestration with injected authorization, verification, readback, policy, signer and audit ports;
